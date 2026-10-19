@@ -69,7 +69,12 @@ jobs:
       - run: npm install -g npm@11
       - run: npm ci --ignore-scripts
       # prepublishOnly builds dist/; publishConfig sets access=public and provenance.
+      # BOOTSTRAP ONLY: the first version needs a token because npm can't attach a
+      # trusted publisher to a package that doesn't exist yet. Remove this env block
+      # and the NPM_BOOTSTRAP_TOKEN secret once the trusted publisher is configured.
       - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
 
   binaries:
     needs: [check, test]
