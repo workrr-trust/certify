@@ -5,6 +5,8 @@ with **publicly logged certificates anyone can verify without trusting Workrr**.
 
 - **Certificate format:** [spec/README.md](spec/README.md) (in-toto Statement, predicate
   `https://trust.workrr.ai/certificate/v0.1`)
+- **Go implementation:** `certify-go/` in the workrr-trust repo (same spec and CLI, single
+  static binary), held to this one by the shared [test vectors](spec/test-vectors/README.md)
 - **Design:** `docs/trust-authority.md` in [workrr-trust](https://github.com/shawnbure/workrr-trust)
 - **License:** Apache-2.0
 

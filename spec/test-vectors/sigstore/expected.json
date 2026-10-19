@@ -1,0 +1,12 @@
+{
+  "$comment": "A real public-good Sigstore bundle (npm provenance for sigstore@5.0.0, from https://registry.npmjs.org/-/npm/v1/attestations/sigstore@5.0.0) and a pinned trusted_root.json from the Sigstore TUF repository. Expected signer values were cross-checked with openssl x509 -text.",
+  "bundle": "npm-sigstore-5.0.0.sigstore.json",
+  "trustedRoot": "trusted_root.json",
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "subjectDigest": { "sha512": "849a897e81bf7b8a8541a6ae40bd3473a27a16b1cb0462ad905bd6dc96d34881053a12eb4a375233f81677fc9439f628fe0b0445e8535c60b5559597fbd5f80e" },
+  "signer": {
+    "subjectAlternativeName": "https://github.com/sigstore/sigstore-js/.github/workflows/release.yml@refs/heads/main",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "buildSignerDigest": "7d2900eca1c22b3f87c13987c8d4b7c9a29b733a"
+  }
+}

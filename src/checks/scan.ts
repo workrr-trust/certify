@@ -3,7 +3,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Artifact } from "../artifact.js";
-import { jsonDigest } from "../digest.js";
+import { byteOrder, jsonDigest } from "../digest.js";
 
 export type Severity = "warn" | "high" | "critical";
 type Rule = { id: string; severity: Severity; description: string; pattern: string; flags: string };
@@ -44,7 +44,9 @@ export async function scanArtifact(artifact: Artifact): Promise<ScanResult> {
     if (!bytes || bytes.includes(0)) continue; // symlink or binary
     findings.push(...scanText(bytes.toString("utf8"), f.path));
   }
-  findings.sort((a, b) => (a.file === b.file ? a.line - b.line || a.rule.localeCompare(b.rule) : a.file < b.file ? -1 : 1));
+  // File by UTF-8 byte order (not JS UTF-16 order), then line, then rule id, so
+  // every implementation orders findings identically (spec §3).
+  findings.sort((a, b) => byteOrder(a.file, b.file) || a.line - b.line || byteOrder(a.rule, b.rule));
   const failing = findings.some((x) => x.severity !== "warn");
   return {
     result: failing ? "fail" : "pass",

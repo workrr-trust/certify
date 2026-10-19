@@ -48,6 +48,26 @@ Every check records exactly what was used, so anyone can re-run it.
 recorded and don't fail the check.
 
 **Canonical JSON.** Object keys sorted lexicographically, no whitespace, UTF-8.
+Precisely: keys sorted by UTF-8 byte order; strings and numbers serialized as
+ECMAScript `JSON.stringify` does (only `"`, `\` and U+0000–U+001F are escaped;
+`1e+21`, `1e-7`, `-0` → `0`); absent optional fields are omitted, never `null`.
+
+**Determinism rules.** Gold compares `checks` byte for byte, so these are part of the
+contract, not implementation details:
+
+- **Scan input.** Files containing a NUL byte are skipped. Other files are decoded as
+  UTF-8 with WHATWG replacement (one U+FFFD per maximal invalid subpart; a BOM is kept).
+  Symlinks are read through to their target; unreadable files are skipped.
+- **Scan patterns** are ECMAScript regular expressions, run with their flags plus `m`.
+  Without `u`, they operate on UTF-16 code units. A finding's line is 1 + the number of
+  `\n` before the match start; each rule reports at most one finding per line.
+- **Findings order:** file (UTF-8 byte order), then line, then rule id.
+- **SKILL.md frontmatter** is the YAML between a leading `---` line and the next
+  `---` line, parsed with the YAML 1.2 core schema (no merge keys; duplicate keys are
+  a parse error). A frontmatter field counts only if it is a non-blank string.
+
+Cross-implementation test vectors live in [test-vectors/](test-vectors/README.md); every
+implementation must pass them.
 
 ## 4. Level
 
