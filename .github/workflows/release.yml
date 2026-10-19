@@ -1,0 +1,146 @@
+# Release: on a vX.Y.Z tag, test both implementations, publish the npm package with
+# provenance (npm trusted publishing — no stored npm token), and attach signed,
+# attested Go binaries to the GitHub release.
+#
+# Cutting a release (org admin; tags are protected by a ruleset, so this workflow
+# cannot create them itself):
+#   1. Bump package.json, src/version.ts and go/certify.go to X.Y.Z on main.
+#   2. git tag -a vX.Y.Z -m vX.Y.Z && git tag -a go/vX.Y.Z -m go/vX.Y.Z
+#   3. git push origin vX.Y.Z go/vX.Y.Z
+# The vX.Y.Z tag is also a certifier identity (certify.yml@refs/tags/vX.Y.Z): never
+# move or reuse one.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: v
+        name: Tag, package.json, TS and Go versions agree; go/ tag on the same commit
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          pkg=$(node -p 'require("./package.json").version')
+          ts=$(sed -nE 's/.*VERSION = "([^"]+)".*/\1/p' src/version.ts)
+          go=$(sed -nE 's/^[[:space:]]*Version[[:space:]]*= "([^"]+)".*/\1/p' go/certify.go)
+          echo "tag=$version package.json=$pkg ts=$ts go=$go"
+          [ "$version" = "$pkg" ] && [ "$version" = "$ts" ] && [ "$version" = "$go" ] || { echo "::error::version mismatch"; exit 1; }
+          git rev-parse -q --verify "refs/tags/go/$tag^{commit}" >/dev/null || { echo "::error::push go/$tag too (Go module tag)"; exit 1; }
+          [ "$(git rev-parse "$tag^{commit}")" = "$(git rev-parse "go/$tag^{commit}")" ] || { echo "::error::go/$tag points at a different commit"; exit 1; }
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+  test:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  npm:
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    # Trusted publisher on npmjs.com: workrr-trust/certify · release.yml · environment npm.
+    # Add required reviewers to this environment to gate publishes.
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm >= 11.5.1.
+      - run: npm install -g npm@11
+      - run: npm ci --ignore-scripts
+      # prepublishOnly builds dist/; publishConfig sets access=public and provenance.
+      - run: npm publish
+
+  binaries:
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64, ext: .exe }
+          - { goos: windows, goarch: arm64, ext: .exe }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Build
+        working-directory: go
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          OUT: workrr_${{ needs.check.outputs.version }}_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
+        run: |
+          mkdir -p ../dist
+          go build -trimpath -ldflags "-s -w" -o "../dist/$OUT" ./cmd/workrr
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/
+
+  release:
+    needs: [check, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bin-*
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum workrr_* > "workrr_${{ needs.check.outputs.version }}_checksums.txt" && cat ./*checksums.txt
+      - name: Attest build provenance (Sigstore, public Rekor)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/workrr_*
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          cat > notes.md <<EOF
+          workrr certifier ${TAG}
+
+          - npm: \`npx @workrr-trust/certify@${VERSION} verify <path> --bundle <certificate.sigstore.json>\`
+          - Go: \`go install github.com/workrr-trust/certify/go/cmd/workrr@${TAG}\`, or download a binary below
+          - Certifier identity: \`https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/${TAG}\`
+
+          Verify a binary was built here: \`gh attestation verify <file> --repo workrr-trust/certify\`
+          EOF
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file notes.md

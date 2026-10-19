@@ -44,8 +44,17 @@ The workflow:
 ## Verify
 
 ```bash
+# npm (published with provenance)
 npx @workrr-trust/certify verify ./my-skill --bundle certificate.sigstore.json
+
+# Go
+go install github.com/workrr-trust/certify/go/cmd/workrr@latest
+workrr verify ./my-skill --bundle certificate.sigstore.json
 ```
+
+Prebuilt binaries for Linux, macOS and Windows are attached to each
+[release](https://github.com/workrr-trust/certify/releases) with build attestations:
+`gh attestation verify <file> --repo workrr-trust/certify`.
 
 Checks the artifact digest, the Sigstore certificate chain and signature, Rekor
 inclusion, and that the signer is an accepted Workrr certifier identity. Pass a second

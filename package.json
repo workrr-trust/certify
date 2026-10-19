@@ -1,6 +1,6 @@
 {
   "name": "@workrr-trust/certify",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Certify and verify AI agent artifacts (skills, MCP servers, rulesets) with publicly logged, independently verifiable certificates.",
   "license": "Apache-2.0",
   "type": "module",
@@ -17,11 +17,29 @@
   "scripts": {
     "build": "tsc -p .",
     "test": "npm run build && node --test \"test/*.test.mjs\"",
-    "typecheck": "tsc -p . --noEmit"
+    "typecheck": "tsc -p . --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/workrr-trust/certify.git"
+  },
+  "homepage": "https://github.com/workrr-trust/certify#readme",
+  "bugs": {
+    "url": "https://github.com/workrr-trust/certify/issues"
+  },
+  "keywords": [
+    "ai-agents",
+    "agent-skills",
+    "mcp",
+    "sigstore",
+    "supply-chain-security",
+    "attestation",
+    "in-toto"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "dependencies": {
     "sigstore": "^5.0.0",
