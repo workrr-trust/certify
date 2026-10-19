@@ -1,0 +1,235 @@
+package certify
+
+import (
+	"encoding/hex"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/sigstore/sigstore-go/pkg/bundle"
+	"github.com/sigstore/sigstore-go/pkg/root"
+)
+
+const fixtures = "../certify/test/fixtures"
+
+func TestDecodeUTF8MatchesNode(t *testing.T) {
+	// Expected code points observed from Node's Buffer#toString("utf8").
+	in := []byte{0xef, 0xbb, 0xbf, 0x41, 0xe2, 0x82, 0x41, 0xf0, 0x9f, 0x41, 0xed, 0xa0, 0x80, 0x41, 0xc0, 0xaf, 0x41, 0xf4, 0x90, 0x80, 0x80, 0x41, 0xe2}
+	want := []rune{0xfeff, 'A', 0xfffd, 'A', 0xfffd, 'A', 0xfffd, 0xfffd, 0xfffd, 'A', 0xfffd, 0xfffd, 'A', 0xfffd, 0xfffd, 0xfffd, 0xfffd, 'A', 0xfffd}
+	if got := []rune(DecodeUTF8(in)); !slices.Equal(got, want) {
+		t.Fatalf("got %U\nwant %U", got, want)
+	}
+}
+
+func TestDirhashManifest(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "b"), 0o755)
+	os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
+	os.WriteFile(filepath.Join(dir, "b", "x.txt"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
+	os.WriteFile(filepath.Join(dir, ".git", "HEAD"), []byte("ignored"), 0o644)
+	os.Symlink("a.txt", filepath.Join(dir, "link"))
+	d, err := DigestArtifact(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := SHA256Hex([]byte("a")) + "  a.txt\n" + SHA256Hex([]byte("x")) + "  b/x.txt\n" + SHA256Hex([]byte("a.txt")) + "  link\n"
+	if d.Algorithm != AlgDirhashV1 || d.SHA256 != SHA256Hex([]byte(manifest)) {
+		t.Fatalf("got %s %s", d.Algorithm, d.SHA256)
+	}
+}
+
+func TestScanDoesNotFlagOrdinaryProse(t *testing.T) {
+	text := "Ignore whitespace when comparing.\nTell the user the result.\nUse curl to fetch the page.\n"
+	if f := ScanText(text, "x.md"); len(f) != 0 {
+		t.Fatalf("unexpected findings: %v", f)
+	}
+}
+
+func TestTranslateRegExp(t *testing.T) {
+	got := translateRegExp(`\b(don't)\s+[a-z0-9]+\$HOME`, true, false)
+	want := `\b([dD][oO][nN]'[tT])[` + JSWhitespaceClass + `]+[a-zA-Z0-9]+\$[hH][oO][mM][eE]`
+	if got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("lookbehind should be rejected")
+		}
+	}()
+	translateRegExp(`(?<!^)x`, false, true)
+}
+
+func TestJSNumber(t *testing.T) {
+	for f, want := range map[float64]string{0: "0", 1e21: "1e+21", 1e20: "100000000000000000000", 1e-7: "1e-7", 0.000001: "0.000001", 123e-20: "1.23e-18", -1.5: "-1.5", 5e-324: "5e-324"} {
+		if got := JSNumber(f); got != want {
+			t.Errorf("JSNumber(%v) = %s, want %s", f, got, want)
+		}
+	}
+}
+
+func TestJSToLower(t *testing.T) {
+	// Expected values from Node's String#toLowerCase (final sigma is contextual).
+	for in, want := range map[string]string{
+		"\u039F\u0394\u039F\u03A3.EXE \u0130": "\u03BF\u03B4\u03BF\u03C3.exe i\u0307",
+		"\u039F\u0394\u039F\u03A3 .EXE":       "\u03BF\u03B4\u03BF\u03C2 .exe",
+		"\u0391\u03A3":                        "\u03B1\u03C2",
+	} {
+		if got := JSToLower(in); got != want {
+			t.Errorf("JSToLower(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestNormalizeRepoURI(t *testing.T) {
+	for in, want := range map[string]string{
+		"git@github.com:shawnbure/workrr-trust.git": "https://github.com/shawnbure/workrr-trust",
+		"https://token@github.com/a/b.git":          "https://github.com/a/b",
+		"https://gitlab.com/a/b":                    "https://gitlab.com/a/b",
+	} {
+		if got := NormalizeRepoURI(in); got != want {
+			t.Errorf("%s → %s, want %s", in, got, want)
+		}
+	}
+}
+
+func TestRunTests(t *testing.T) {
+	a, err := LoadArtifact(filepath.Join(fixtures, "bad-skill"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := RunTests(a, time.Minute); r.Result != "none" || r.Command != nil {
+		t.Fatalf("no suite: got %+v", r)
+	}
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "workrr.json"), []byte(`{"test":{"command":"  exit 3  "}}`), 0o644)
+	if a, err = LoadArtifact(dir); err != nil {
+		t.Fatal(err)
+	}
+	r := RunTests(a, time.Minute)
+	if r.Result != "fail" || *r.Command != "exit 3" || *r.ExitCode != 3 {
+		t.Fatalf("got %+v", r)
+	}
+}
+
+func TestPolicyOverridesChangeDigest(t *testing.T) {
+	a, err := LoadArtifact(filepath.Join(fixtures, "good-skill"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	strict, err := BaselinePolicy().WithOverrides(map[string]any{"name": "strict", "allowedTools": []string{"Grep"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := CheckPolicy(a, strict)
+	if r.Result != "fail" || !slices.Equal(r.Violations, []string{"tool not allowed by policy: Read"}) {
+		t.Fatalf("got %+v", r)
+	}
+	if r.PolicyDigest == CheckPolicy(a, nil).PolicyDigest {
+		t.Fatal("policy digest should change with the policy")
+	}
+}
+
+func TestMatchSigner(t *testing.T) {
+	gh := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.0", Issuer: "https://token.actions.githubusercontent.com", BuildSignerDigest: "abc"}
+	if s := MatchSigner(&DefaultTrustPolicy, gh); s == nil || s.Forge != ForgeGitHub {
+		t.Fatalf("expected github signer, got %+v", s)
+	}
+	for _, bad := range []*Signer{
+		{SAN: gh.SAN + "x", Issuer: gh.Issuer},
+		{SAN: strings.Replace(gh.SAN, "workrr-trust", "evil", 1), Issuer: gh.Issuer},
+		{SAN: gh.SAN, Issuer: "https://gitlab.com"},
+		{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/heads/dev", Issuer: gh.Issuer},
+	} {
+		if s := MatchSigner(&DefaultTrustPolicy, bad); s != nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+	pinned := DefaultTrustPolicy
+	pinned.Signers = slices.Clone(pinned.Signers)
+	pinned.Signers[0].BuildSignerDigests = []string{"def"}
+	if MatchSigner(&pinned, gh) != nil {
+		t.Error("accepted an unpinned certifier commit")
+	}
+	pinned.Signers[0].BuildSignerDigests = []string{"abc"}
+	if MatchSigner(&pinned, gh) == nil {
+		t.Error("rejected a pinned certifier commit")
+	}
+}
+
+// A real public-good bundle (npm provenance for sigstore@5.0.0, signed from
+// GitHub Actions, logged in public Rekor), verified offline against a pinned
+// trusted root: certificate chain, SCT, DSSE signature, Rekor inclusion proof.
+func TestVerifySigstorePublicGoodBundle(t *testing.T) {
+	dir := filepath.Join(vectorsDir, "sigstore")
+	var exp struct {
+		Bundle        string            `json:"bundle"`
+		TrustedRoot   string            `json:"trustedRoot"`
+		PredicateType string            `json:"predicateType"`
+		SubjectDigest map[string]string `json:"subjectDigest"`
+		Signer        struct {
+			SAN               string `json:"subjectAlternativeName"`
+			Issuer            string `json:"issuer"`
+			BuildSignerDigest string `json:"buildSignerDigest"`
+		} `json:"signer"`
+	}
+	readJSONFile(t, filepath.Join(dir, "expected.json"), &exp)
+	tm, err := root.NewTrustedRootFromPath(filepath.Join(dir, exp.TrustedRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundlePath := filepath.Join(dir, exp.Bundle)
+	b, err := bundle.LoadJSONFromPath(bundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, _ := hex.DecodeString(exp.SubjectDigest["sha512"])
+	s, err := VerifySigstore(b, tm, "sha512", digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.SAN != exp.Signer.SAN || s.Issuer != exp.Signer.Issuer || s.BuildSignerDigest != exp.Signer.BuildSignerDigest {
+		t.Fatalf("signer %+v", s)
+	}
+	policy := &TrustPolicy{Signers: []AcceptedSigner{{
+		Forge: ForgeGitHub, Issuer: exp.Signer.Issuer,
+		SubjectAlternativeName: `^https://github\.com/sigstore/sigstore-js/\.github/workflows/release\.yml@refs/heads/main$`,
+		BuildSignerDigests:     []string{exp.Signer.BuildSignerDigest},
+	}}}
+	if MatchSigner(policy, s) == nil {
+		t.Fatal("pinned policy should accept the signer")
+	}
+	if MatchSigner(&DefaultTrustPolicy, s) != nil {
+		t.Fatal("default policy must not accept a non-Workrr signer")
+	}
+
+	// Wrong digest → rejected by sigstore-go.
+	if _, err := VerifySigstore(b, tm, "sha512", make([]byte, 64)); err == nil {
+		t.Fatal("verified against the wrong digest")
+	}
+	// Tampered signature → rejected.
+	data, _ := os.ReadFile(bundlePath)
+	sig := `"sig": "`
+	i := strings.Index(string(data), sig) + len(sig)
+	tampered := []byte(string(data[:i]) + "A" + string(data[i+1:]))
+	if data[i] == 'A' {
+		tampered[i] = 'B'
+	}
+	tp := filepath.Join(t.TempDir(), "tampered.json")
+	os.WriteFile(tp, tampered, 0o644)
+	tb, err := bundle.LoadJSONFromPath(tp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifySigstore(tb, tm, "sha512", digest); err == nil {
+		t.Fatal("verified a tampered signature")
+	}
+	// The full Workrr path rejects it before signature checks: not a Workrr predicate.
+	r := VerifyBundle(bundlePath, strings.Repeat("0", 64), &DefaultTrustPolicy, &TrustedMaterialSource{Path: filepath.Join(dir, exp.TrustedRoot)})
+	if r.OK || r.Error != "unsupported predicate type: "+exp.PredicateType {
+		t.Fatalf("got %+v", r.Error)
+	}
+}
