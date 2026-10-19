@@ -85,6 +85,6 @@ test("no suite → tests none", async () => {
 });
 
 test("normalizes git remotes", () => {
-  assert.equal(normalizeRepoUri("git@github.com:shawnbure/workrr-trust.git"), "https://github.com/shawnbure/workrr-trust");
+  assert.equal(normalizeRepoUri("git@github.com:workrr-trust/certify.git"), "https://github.com/workrr-trust/certify");
   assert.equal(normalizeRepoUri("https://token@github.com/a/b.git"), "https://github.com/a/b");
 });

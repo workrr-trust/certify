@@ -1,12 +1,12 @@
-# workrr-trust/certify-go
+# workrr-trust/certify — Go
 
 Go implementation of the Workrr Trust certifier: the same certificate spec
-([../certify/spec/README.md](../certify/spec/README.md)) and the same `workrr` CLI as
-the TypeScript reference in [../certify](../certify), as a single static binary.
+([../spec/README.md](../spec/README.md)) and the same `workrr` CLI as
+the TypeScript reference at the [repo root](..), as a single static binary.
 
 Gold certificates need two forges to produce **byte-identical canonical `checks`**,
 so this implementation is held to the TypeScript one by shared test vectors
-([../certify/spec/test-vectors](../certify/spec/test-vectors)), not just by the spec text.
+([../spec/test-vectors](../spec/test-vectors)), not just by the spec text.
 
 ## Build and test
 

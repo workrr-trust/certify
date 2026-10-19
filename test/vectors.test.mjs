@@ -1,5 +1,5 @@
 // Cross-implementation test vectors (spec/test-vectors). The Go implementation
-// (certify-go) asserts against the same expected.json; Gold depends on both
+// (go/) asserts against the same expected.json; Gold depends on both
 // producing byte-identical canonical `checks`.
 import assert from "node:assert/strict";
 import { test } from "node:test";

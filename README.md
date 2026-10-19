@@ -5,14 +5,15 @@ with **publicly logged certificates anyone can verify without trusting Workrr**.
 
 - **Certificate format:** [spec/README.md](spec/README.md) (in-toto Statement, predicate
   `https://trust.workrr.ai/certificate/v0.1`)
-- **Go implementation:** `certify-go/` in the workrr-trust repo (same spec and CLI, single
-  static binary), held to this one by the shared [test vectors](spec/test-vectors/README.md)
-- **Design:** `docs/trust-authority.md` in [workrr-trust](https://github.com/shawnbure/workrr-trust)
-- **License:** Apache-2.0
+- **Implementations:** TypeScript (this directory) and Go ([go/](go/), single static
+  binary), held byte-for-byte to each other by the shared [test vectors](spec/test-vectors/README.md)
+- **Design rationale:** [docs/design.md](docs/design.md)
+- **Security:** [SECURITY.md](SECURITY.md)
+- **License:** [Apache-2.0](LICENSE)
 
-> Status: v0.1, pre-release. It lives in `certify/` of the workrr-trust repo until the
-> `workrr-trust` GitHub org exists; it then becomes the root of `workrr-trust/certify`,
-> whose workflow path is the certifier's public signing identity.
+> Status: v0.1, pre-release. The path of this repo's
+> `.github/workflows/certify.yml` is the certifier's public signing identity, so
+> changes to it are changes to what Workrr signs.
 
 ## Certify in CI (GitHub)
 

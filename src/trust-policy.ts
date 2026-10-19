@@ -1,6 +1,6 @@
 // The trust policy: which certifier identities a verifier accepts.
 // v0.1 ships the default inline. v0.2 distributes it as a TUF-signed file under the
-// offline Workrr root key (docs/trust-authority.md §2).
+// offline Workrr root key (docs/design.md §2).
 
 export type Forge = "github" | "gitlab";
 

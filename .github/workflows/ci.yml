@@ -1,0 +1,53 @@
+# Repo CI: runs both certifier implementations against the shared test vectors so
+# the TypeScript reference (repo root) and the Go port (go/) can't drift.
+#
+# Not to be confused with certify.yml, whose path is the certifier's signing identity.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  certify-ts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      # expected.json is generated from the TS reference, never edited by hand.
+      # npm test already built dist/, which generate.mjs imports.
+      - name: Test vectors are up to date
+        run: |
+          node spec/test-vectors/generate.mjs
+          git diff --exit-code -- spec/test-vectors/expected.json
+
+  certify-go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Static build (linux/amd64)
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: go build -o /dev/null ./cmd/workrr

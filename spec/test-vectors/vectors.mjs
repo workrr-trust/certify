@@ -1,6 +1,6 @@
-// Evaluates cases.json with the TypeScript certifier (certify/dist) into the
-// shape of expected.json. Used by certify/test/vectors.test.mjs and by
-// generate.mjs. The Go implementation has its own evaluator (certify-go/vectors_test.go).
+// Evaluates cases.json with the TypeScript certifier (dist/) into the
+// shape of expected.json. Used by test/vectors.test.mjs and by
+// generate.mjs. The Go implementation has its own evaluator (go/vectors_test.go).
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";

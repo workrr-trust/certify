@@ -8,7 +8,7 @@ produce byte-identical `checks`.
 
 - **Predicate type:** `https://trust.workrr.ai/certificate/v0.1`
 - **JSON Schema:** [predicate-v0.1.schema.json](predicate-v0.1.schema.json)
-- **Design rationale:** `docs/trust-authority.md` in the workrr-trust repo
+- **Design rationale:** [docs/design.md](../docs/design.md)
 
 ## 1. Artifact digest
 

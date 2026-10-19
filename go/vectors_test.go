@@ -1,4 +1,4 @@
-// Cross-implementation test vectors (certify/spec/test-vectors). The TypeScript
+// Cross-implementation test vectors (spec/test-vectors). The TypeScript
 // reference asserts against the same expected.json; Gold depends on both
 // producing byte-identical canonical `checks`.
 package certify
@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-const vectorsDir = "../certify/spec/test-vectors"
+const vectorsDir = "../spec/test-vectors"
 
 type vectorFile struct {
 	Path    string            `json:"path"`

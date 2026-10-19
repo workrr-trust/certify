@@ -13,7 +13,7 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/root"
 )
 
-const fixtures = "../certify/test/fixtures"
+const fixtures = "../test/fixtures"
 
 func TestDecodeUTF8MatchesNode(t *testing.T) {
 	// Expected code points observed from Node's Buffer#toString("utf8").
@@ -86,7 +86,7 @@ func TestJSToLower(t *testing.T) {
 
 func TestNormalizeRepoURI(t *testing.T) {
 	for in, want := range map[string]string{
-		"git@github.com:shawnbure/workrr-trust.git": "https://github.com/shawnbure/workrr-trust",
+		"git@github.com:workrr-trust/certify.git": "https://github.com/workrr-trust/certify",
 		"https://token@github.com/a/b.git":          "https://github.com/a/b",
 		"https://gitlab.com/a/b":                    "https://gitlab.com/a/b",
 	} {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	certify "github.com/workrr-trust/certify-go"
+	certify "github.com/workrr-trust/certify/go"
 )
 
 const help = `workrr ` + certify.Version + ` — certify and verify AI agent artifacts

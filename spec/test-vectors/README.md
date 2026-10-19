@@ -2,7 +2,7 @@
 
 Gold requires two certifiers (TypeScript on one forge, Go or TypeScript on another) to
 produce byte-identical canonical `checks`. These vectors pin that. Both
-`certify/test/vectors.test.mjs` and `certify-go/vectors_test.go` assert against
+`test/vectors.test.mjs` and `go/vectors_test.go` assert against
 `expected.json`.
 
 | File | Contents |
@@ -27,7 +27,7 @@ them. Each artifact's `checks` under each listed policy is
 ## What `scan-edges` covers
 
 Each line of its `SKILL.md` is a place where a naive Go/RE2 port diverges from
-ECMAScript (see `certify-go/README.md`):
+ECMAScript (see `go/README.md`):
 
 | Line | Case | Expected |
 |---|---|---|
@@ -54,6 +54,6 @@ Only for an intentional spec or ruleset change:
 cd certify && npm run build && node spec/test-vectors/generate.mjs
 ```
 
-Review the `expected.json` diff line by line, and make `go test ./...` in `certify-go`
+Review the `expected.json` diff line by line, and make `go test ./...` in `go/`
 pass in the same change. `generate.mjs` escapes non-ASCII so invisible characters stay
 visible in review.

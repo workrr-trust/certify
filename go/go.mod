@@ -1,4 +1,4 @@
-module github.com/workrr-trust/certify-go
+module github.com/workrr-trust/certify/go
 
 go 1.25.8
 
