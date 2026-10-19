@@ -1,0 +1,1 @@
+{ "test": { "command": "node check.cjs" } }

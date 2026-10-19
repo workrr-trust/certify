@@ -1,0 +1,138 @@
+#!/usr/bin/env node
+// workrr — certify and verify AI agent artifacts.
+import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { parseArgs } from "node:util";
+import { loadArtifact } from "./artifact.js";
+import { certify } from "./certify.js";
+import { BASELINE_POLICY, type Policy } from "./checks/policy.js";
+import { runTests, type TestsReport } from "./checks/tests.js";
+import { digestArtifact } from "./digest.js";
+import { DEFAULT_TRUST_POLICY, type TrustPolicy } from "./trust-policy.js";
+import { verifyArtifact } from "./verify.js";
+import { VERSION } from "./version.js";
+
+const HELP = `workrr ${VERSION} — certify and verify AI agent artifacts
+
+Usage:
+  workrr digest  <path>
+  workrr test    <path> [--out tests.json]
+  workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
+                        [--statement-out statement.json] [--predicate-out predicate.json]
+  workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json] [--json]
+
+  test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
+           in CI, use a job WITHOUT signing permission.
+  certify  Runs provenance, policy and scan checks; exits 1 if any check fails.
+           In GitHub Actions also writes subject-name / subject-digest outputs.
+  verify   Checks the artifact digest, Sigstore signature, Rekor inclusion and
+           certifier identity. Two bundles from different forges → Gold.
+`;
+
+async function readJson<T>(path: string): Promise<T> {
+  return JSON.parse(await readFile(path, "utf8")) as T;
+}
+
+async function main(argv: string[]): Promise<number> {
+  const [cmd, ...rest] = argv;
+  if (!cmd || cmd === "-h" || cmd === "--help") {
+    process.stdout.write(HELP);
+    return 0;
+  }
+  if (cmd === "--version" || cmd === "-v") {
+    process.stdout.write(`${VERSION}\n`);
+    return 0;
+  }
+  const { values, positionals } = parseArgs({
+    args: rest,
+    allowPositionals: true,
+    options: {
+      out: { type: "string" },
+      policy: { type: "string" },
+      "tests-report": { type: "string" },
+      "run-tests": { type: "boolean" },
+      "statement-out": { type: "string" },
+      "predicate-out": { type: "string" },
+      bundle: { type: "string", multiple: true },
+      "trust-policy": { type: "string" },
+      json: { type: "boolean" },
+    },
+  });
+  const path = positionals[0];
+  if (!path) throw new Error(`missing <path>\n\n${HELP}`);
+
+  switch (cmd) {
+    case "digest": {
+      const d = await digestArtifact(path);
+      process.stdout.write(`sha256:${d.sha256}  ${d.algorithm}  ${d.files.length} file(s)\n`);
+      return 0;
+    }
+    case "test": {
+      const artifact = await loadArtifact(path);
+      const report: TestsReport = { artifactDigest: artifact.digest.sha256, tests: await runTests(artifact) };
+      const json = JSON.stringify(report, null, 2) + "\n";
+      if (values.out) await writeFile(values.out, json);
+      else process.stdout.write(json);
+      process.stderr.write(`tests: ${report.tests.result}\n`);
+      return report.tests.result === "fail" ? 1 : 0;
+    }
+    case "certify": {
+      const policy = values.policy ? await readJson<Policy>(values.policy) : BASELINE_POLICY;
+      const testsReport = values["tests-report"] ? await readJson<TestsReport>(values["tests-report"]) : undefined;
+      const outcome = await certify(path, { policy, testsReport, runTestsLocally: values["run-tests"] });
+      const { statement } = outcome;
+      const p = statement.predicate;
+      const c = p.checks;
+      process.stderr.write(
+        [
+          `artifact   ${p.artifact.name} (${p.artifact.type}, ${p.artifact.fileCount} file(s))`,
+          `digest     sha256:${statement.subject[0].digest.sha256}`,
+          `source     ${p.source.uri}@${p.source.commit.slice(0, 12)} ${p.source.path}`,
+          `provenance ${c.provenance.result}${c.provenance.reason ? ` — ${c.provenance.reason}` : ""}`,
+          `policy     ${c.policy.result} (${c.policy.policyName})`,
+          `scan       ${c.scan.result} (${c.scan.findings.length} finding(s), ${c.scan.rulesetVersion})`,
+          `tests      ${c.tests.result}`,
+          outcome.certified ? `level      ${p.level}` : `NOT CERTIFIED:\n  - ${outcome.failures.join("\n  - ")}`,
+          "",
+        ].join("\n"),
+      );
+      for (const f of c.scan.findings.filter((x) => x.severity === "warn")) {
+        process.stderr.write(`  warn: ${f.rule} ${f.file}:${f.line}\n`);
+      }
+      if (values["statement-out"]) await writeFile(values["statement-out"], JSON.stringify(statement, null, 2) + "\n");
+      if (values["predicate-out"]) await writeFile(values["predicate-out"], JSON.stringify(p, null, 2) + "\n");
+      if (process.env.GITHUB_OUTPUT) {
+        await appendFile(
+          process.env.GITHUB_OUTPUT,
+          `certified=${outcome.certified}\nsubject-name=${statement.subject[0].name}\nsubject-digest=sha256:${statement.subject[0].digest.sha256}\nlevel=${p.level}\n`,
+        );
+      }
+      return outcome.certified ? 0 : 1;
+    }
+    case "verify": {
+      if (!values.bundle?.length) throw new Error("verify needs at least one --bundle");
+      const policy = values["trust-policy"] ? await readJson<TrustPolicy>(values["trust-policy"]) : DEFAULT_TRUST_POLICY;
+      const result = await verifyArtifact(path, values.bundle, policy);
+      if (values.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      } else {
+        process.stdout.write(`artifact sha256:${result.artifactDigest}\n`);
+        for (const b of result.bundles) {
+          process.stdout.write(b.ok ? `  ✓ ${b.bundlePath} — ${b.forge}: ${b.signerIdentity}\n` : `  ✗ ${b.bundlePath} — ${b.error}\n`);
+        }
+        process.stdout.write(result.ok ? `VERIFIED · level ${result.level}\n` : "NOT VERIFIED\n");
+        for (const n of result.notes) process.stdout.write(`  note: ${n}\n`);
+      }
+      return result.ok ? 0 : 1;
+    }
+    default:
+      throw new Error(`unknown command: ${cmd}\n\n${HELP}`);
+  }
+}
+
+main(process.argv.slice(2)).then(
+  (code) => process.exit(code),
+  (err) => {
+    process.stderr.write(`workrr: ${(err as Error).message}\n`);
+    process.exit(2);
+  },
+);

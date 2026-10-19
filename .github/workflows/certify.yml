@@ -1,0 +1,167 @@
+# Workrr Trust certifier — reusable workflow.
+#
+# This workflow's identity IS the certifier identity: Fulcio records
+#   https://github.com/workrr-trust/certify/.github/workflows/certify.yml@<ref>
+# as the certificate SAN and this repo's commit as the Build Signer Digest.
+#
+# Caller (in the artifact's PUBLIC repo; private repos log to GitHub's private
+# Sigstore instance, not public Rekor):
+#
+#   jobs:
+#     certify:
+#       permissions: { contents: read, id-token: write, attestations: write }
+#       uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.0
+#       with: { path: skills/my-skill }
+#
+# Security model: artifact code (its test suite) runs ONLY in the `test` job,
+# which has no id-token permission and cannot sign. The `certify` job never
+# executes artifact code; it re-derives the digest itself and only accepts a test
+# report whose digest matches.
+name: workrr-certify
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        description: Path to the artifact (directory or file) in the caller repo
+        type: string
+        required: true
+      policy:
+        description: "Optional path to a policy JSON in the caller repo (default: workrr baseline)"
+        type: string
+        default: ""
+    outputs:
+      certified:
+        value: ${{ jobs.certify.outputs.certified }}
+      level:
+        value: ${{ jobs.certify.outputs.level }}
+      subject-digest:
+        value: ${{ jobs.certify.outputs.subject-digest }}
+
+permissions: {}
+
+jobs:
+  resolve:
+    # Reads this reusable workflow's own commit from the OIDC token, so the certifier
+    # code that runs is exactly the code the signing identity names.
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    outputs:
+      certifier-repo: ${{ steps.claims.outputs.repo }}
+      certifier-sha: ${{ steps.claims.outputs.sha }}
+    steps:
+      - id: claims
+        shell: bash
+        run: |
+          token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=workrr-certify" | jq -r .value)
+          # JWT payload is unpadded base64url.
+          p=$(cut -d. -f2 <<<"$token" | tr '_-' '/+')
+          while [ $(( ${#p} % 4 )) -ne 0 ]; do p="$p="; done
+          claims=$(base64 -d <<<"$p")
+          ref=$(jq -r .job_workflow_ref <<<"$claims")
+          sha=$(jq -r .job_workflow_sha <<<"$claims")
+          repo="${ref%%/.github/workflows/*}"
+          echo "certifier: $ref ($sha)"
+          echo "repo=$repo" >>"$GITHUB_OUTPUT"
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+
+  test:
+    # Runs the artifact's own declared test suite. NO signing permission here.
+    needs: resolve
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: subject
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ needs.resolve.outputs.certifier-repo }}
+          ref: ${{ needs.resolve.outputs.certifier-sha }}
+          path: .workrr-certifier
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Build certifier
+        working-directory: .workrr-certifier
+        run: npm ci --ignore-scripts && npm run build
+      - name: Run artifact tests
+        env:
+          ARTIFACT_PATH: ${{ inputs.path }}
+        # A failing suite still produces a report; certify decides.
+        run: node .workrr-certifier/dist/cli.js test "subject/$ARTIFACT_PATH" --out tests.json || true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workrr-tests-report
+          path: tests.json
+
+  certify:
+    needs: [resolve, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      certified: ${{ steps.run.outputs.certified }}
+      level: ${{ steps.run.outputs.level }}
+      subject-digest: ${{ steps.run.outputs.subject-digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: subject
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ needs.resolve.outputs.certifier-repo }}
+          ref: ${{ needs.resolve.outputs.certifier-sha }}
+          path: .workrr-certifier
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Build certifier
+        working-directory: .workrr-certifier
+        run: npm ci --ignore-scripts && npm run build
+      - uses: actions/download-artifact@v8
+        with:
+          name: workrr-tests-report
+      - name: Certify
+        id: run
+        env:
+          ARTIFACT_PATH: ${{ inputs.path }}
+          POLICY_PATH: ${{ inputs.policy }}
+        run: |
+          args=("subject/$ARTIFACT_PATH" --tests-report tests.json --predicate-out predicate.json --statement-out statement.json)
+          if [ -n "$POLICY_PATH" ]; then args+=(--policy "subject/$POLICY_PATH"); fi
+          node .workrr-certifier/dist/cli.js certify "${args[@]}"
+      - name: Sign and log to Rekor
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.run.outputs.subject-name }}
+          subject-digest: ${{ steps.run.outputs.subject-digest }}
+          predicate-type: https://trust.workrr.ai/certificate/v0.1
+          predicate-path: predicate.json
+      - name: Collect certificate
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          mkdir -p certificate
+          cp "$BUNDLE" certificate/certificate.sigstore.json
+          cp statement.json certificate/statement.json
+          {
+            echo "### Workrr certificate issued"
+            echo "- subject: \`${{ steps.run.outputs.subject-name }}\` \`${{ steps.run.outputs.subject-digest }}\`"
+            echo "- level: **${{ steps.run.outputs.level }}**"
+            echo "- verify: \`npx @workrr-trust/certify verify <path> --bundle certificate.sigstore.json\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workrr-certificate
+          path: certificate/

@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trust.workrr.ai/certificate/v0.1/schema.json",
+  "title": "Workrr Trust certificate predicate v0.1",
+  "type": "object",
+  "required": ["artifact", "source", "checks", "level", "certifier", "certifiedAt"],
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "type": "object",
+      "required": ["name", "type", "digestAlgorithm", "fileCount"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "enum": ["skill", "mcp-server", "agent-context", "other"] },
+        "digestAlgorithm": { "enum": ["file-sha256", "workrr-dirhash-v1"] },
+        "fileCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["uri", "commit", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "uri": { "type": "string" },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+        "path": { "type": "string" }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "required": ["provenance", "policy", "scan", "tests"],
+      "additionalProperties": false,
+      "properties": {
+        "provenance": {
+          "type": "object",
+          "required": ["result", "unchangedFromCommit"],
+          "additionalProperties": false,
+          "properties": {
+            "result": { "enum": ["pass", "fail"] },
+            "unchangedFromCommit": { "type": "boolean" },
+            "reason": { "type": "string" }
+          }
+        },
+        "policy": {
+          "type": "object",
+          "required": ["result", "policyDigest", "violations"],
+          "additionalProperties": false,
+          "properties": {
+            "result": { "enum": ["pass", "fail"] },
+            "policyName": { "type": "string" },
+            "policyDigest": { "$ref": "#/$defs/sha256" },
+            "violations": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "scan": {
+          "type": "object",
+          "required": ["result", "rulesetVersion", "rulesetDigest", "findings"],
+          "additionalProperties": false,
+          "properties": {
+            "result": { "enum": ["pass", "fail"] },
+            "rulesetVersion": { "type": "string" },
+            "rulesetDigest": { "$ref": "#/$defs/sha256" },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["rule", "severity", "file", "line"],
+                "additionalProperties": false,
+                "properties": {
+                  "rule": { "type": "string" },
+                  "severity": { "enum": ["warn", "high", "critical"] },
+                  "file": { "type": "string" },
+                  "line": { "type": "integer", "minimum": 1 }
+                }
+              }
+            }
+          }
+        },
+        "tests": {
+          "type": "object",
+          "required": ["result"],
+          "additionalProperties": false,
+          "properties": {
+            "result": { "enum": ["pass", "fail", "none"] },
+            "command": { "type": "string" },
+            "exitCode": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "level": { "enum": ["silver", "banded"] },
+    "band": { "enum": ["A", "B", "C", "D", "E"] },
+    "certifier": {
+      "type": "object",
+      "required": ["name", "version", "runtime"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "runtime": { "enum": ["github-actions", "gitlab-ci", "local"] }
+      }
+    },
+    "certifiedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}
