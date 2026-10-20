@@ -4,7 +4,7 @@
 
 Please report vulnerabilities privately through
 [GitHub private vulnerability reporting](https://github.com/workrr-trust/certify/security/advisories/new)
-or by email to smb@workrr.ai. Don't open a public issue. We'll acknowledge within
+or by email to info@workrr.ai. Don't open a public issue. We'll acknowledge within
 3 business days.
 
 In scope: anything that could make a verifier accept a certificate it shouldn't — for

@@ -13,6 +13,7 @@ with **publicly logged certificates anyone can verify without trusting Workrr**.
 | **TypeScript / Node** | [`@workrr-trust/certify`](https://www.npmjs.com/package/@workrr-trust/certify) on npm, published with provenance · `npx @workrr-trust/certify verify …` |
 | **Go** | [`github.com/workrr-trust/certify/go`](https://pkg.go.dev/github.com/workrr-trust/certify/go) · `go install github.com/workrr-trust/certify/go/cmd/workrr@latest` |
 | **Binaries** | [GitHub releases](https://github.com/workrr-trust/certify/releases), with Sigstore build attestations |
+| **Guide** | [How to use](https://trust.workrr.ai/guide/) · [instructions for AI agents](https://trust.workrr.ai/instructions.md) |
 | **How it works** | [trust.workrr.ai/how-it-works](https://trust.workrr.ai/how-it-works/) · [live ledger](https://trust.workrr.ai/ledger/) · [spec](https://trust.workrr.ai/certificate/v0.1/) |
 
 - **Certificate format:** [spec/README.md](spec/README.md) (in-toto Statement, predicate
@@ -37,7 +38,7 @@ on: { push: { tags: ["v*"] } }
 jobs:
   certify:
     permissions: { contents: read, id-token: write, attestations: write }
-    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.0
+    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.1
     with:
       path: skills/my-skill
 ```
