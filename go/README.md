@@ -1,6 +1,6 @@
 # workrr-trust/certify — Go
 
-Go implementation of the Workrr Trust certifier: the same certificate spec
+Go implementation of the workrr Trust certifier: the same certificate spec
 ([../spec/README.md](../spec/README.md)) and the same `workrr` CLI as
 the TypeScript reference at the [repo root](..), as a single static binary.
 

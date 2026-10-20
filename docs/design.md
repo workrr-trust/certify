@@ -1,21 +1,21 @@
-# Workrr Trust Authority — Public Trust Ledger Design
+# workrr Trust Authority — Public Trust Ledger Design
 
 *Framework design · 2026-10-19 · status: draft, pre-build*
 
 ## Goal and principles
 
-Make every Workrr certificate a **public, tamper-evident trust document** that anyone
-can verify without trusting Workrr — while Workrr itself runs as little as possible.
+Make every workrr certificate a **public, tamper-evident trust document** that anyone
+can verify without trusting workrr — while workrr itself runs as little as possible.
 
 1. **Maximum trust.** Every claim is checkable by a third party. Nothing in the trust
-   path depends on Workrr's word, Workrr's servers, or any single forge.
+   path depends on workrr's word, workrr's servers, or any single forge.
 2. **Smallest technical footprint.** Reuse public-good infrastructure (Sigstore,
-   public CI, git, public archives). Workrr operates no log, no key server, and no
+   public CI, git, public archives). workrr operates no log, no key server, and no
    signing service for the public tier.
-3. **Survives Workrr.** If Workrr disappears, every certificate already issued stays
+3. **Survives workrr.** If workrr disappears, every certificate already issued stays
    verifiable.
 4. **Point, don't host.** Certificates bind to an artifact's sha256 digest and point
-   to its source. Workrr never redistributes third-party artifacts.
+   to its source. workrr never redistributes third-party artifacts.
 5. **No single forge in control.** GitHub is used, not depended on: the
    highest-assurance certificates require agreement across two independent forges.
 
@@ -32,7 +32,7 @@ independent witnesses gives the same tamper-evidence without tokens or consensus
      ├── runs on GitHub Actions ──┐   each independently runs the four checks
      └── runs on GitLab CI ───────┤   and signs keylessly (Sigstore Fulcio;
                                   │   identity = the certifier workflow on
-                                  │   GitHub, the Workrr certifier project on GitLab)
+                                  │   GitHub, the workrr certifier project on GitLab)
                                   ▼
  Certificate = in-toto attestation (DSSE) ──► Sigstore Rekor (public log)
                                   │                 │ signed, witnessed checkpoints
@@ -43,13 +43,13 @@ independent witnesses gives the same tamper-evidence without tokens or consensus
                                   ▼
  Daily OpenTimestamps anchor of the latest checkpoint (Bitcoin)
 
- Workrr Trust Authority = one offline root key signing one small trust-policy file
+ workrr Trust Authority = one offline root key signing one small trust-policy file
 ```
 
 ## 1. The certificate
 
 An **in-toto attestation** in a DSSE envelope (the format Sigstore, SLSA, and GitHub
-artifact attestations already use), with a Workrr predicate type:
+artifact attestations already use), with a workrr predicate type:
 
 - `subject`: artifact name + **sha256 digest**
 - `source`: canonical source URL + commit (the pointer — no copy is stored)
@@ -72,7 +72,7 @@ attestations at 100 KiB, and evidence belongs behind a digest anyway.
 The authority is **a policy, not a server**.
 
 - **Keyless signing.** Certificates are signed via Sigstore Fulcio using the CI's
-  OIDC identity. No long-lived Workrr signing keys exist to steal, rotate, or leak.
+  OIDC identity. No long-lived workrr signing keys exist to steal, rotate, or leak.
   - **GitHub:** the signing identity *is* the public certifier reusable workflow.
     Fulcio puts `job_workflow_ref` (the *called* reusable workflow, not the caller)
     in the cert SAN, e.g.
@@ -85,7 +85,7 @@ The authority is **a policy, not a server**.
     `.gitlab-ci.yml`, and GitLab does not support it from CI files included from
     another repository. The cert identity (SAN and Build Signer URI =
     `ci_config_ref_uri`) is therefore the **project running the pipeline**, not a
-    shared component. Workrr runs a dedicated public `workrr-trust/certify-gitlab`
+    shared component. workrr runs a dedicated public `workrr-trust/certify-gitlab`
     project whose top-level `.gitlab-ci.yml` is the certifier, pinned by the trust
     policy to project + ref + commit.
 - **The certifier is public code.** Anyone can read exactly what produced a
@@ -97,7 +97,7 @@ The authority is **a policy, not a server**.
   - required forges per assurance level
   - revocation pointers and policy version
   The root key is used only when the certifier itself changes. This file — not a
-  service — is "the Workrr Trust Authority."
+  service — is "the workrr Trust Authority."
 - **Revocation is append-only too.** A revocation is a signed attestation logged in
   Rekor and indexed in the ledger: visible, timestamped, with a reason. Never a
   silent delete.
@@ -105,7 +105,7 @@ The authority is **a policy, not a server**.
 ## 3. The log — Sigstore Rekor
 
 Use the public-good **Sigstore Rekor** instance (run by the OpenSSF community) as the
-append-only log. Workrr runs no log.
+append-only log. workrr runs no log.
 
 - **Version:** sign against whatever the TUF-distributed Sigstore SigningConfig says.
   Today that is **Rekor v1** (`rekor.sigstore.dev`). Sigstore decided in June 2026 to
@@ -122,7 +122,7 @@ append-only log. Workrr runs no log.
   both synchronously in C2SP `tlog-checkpoint` / signed-note format.
 - Rekor is a Merkle tree: any edit or deletion of a past entry is mathematically
   detectable by anyone holding an earlier checkpoint.
-- Trust gain: the log is operated by an independent party, not by Workrr.
+- Trust gain: the log is operated by an independent party, not by workrr.
 - Trade-off: a 99.5% availability SLO but no contractual SLA. Mitigated because the
   ledger mirrors (§5) keep every entry plus its inclusion proof, so verification
   never depends on Rekor being up.
@@ -184,7 +184,7 @@ The **ledger repo** (`workrr-trust/ledger`) is the human-browsable record.
 - A daily CI job timestamps the latest Rekor checkpoint hash with **OpenTimestamps**,
   which anchors it in Bitcoin. The `.ots` proof is committed to the ledger.
 - It gives a proof of "this checkpoint existed by this date" that's independent of
-  Sigstore, git, and Workrr.
+  Sigstore, git, and workrr.
 - It costs nothing and needs no wallet or token. It also supports an accurate
   "anchored on-chain" claim.
 
@@ -207,7 +207,7 @@ sigstore-js / sigstore-python), not a new crypto stack.
 | | **Public (free)** | **Private (paid: Team / Enterprise)** |
 |---|---|---|
 | Artifacts | Public, open-source | Customer-internal |
-| Certifier | Workrr's public workflow | Same workflow, run in the **customer's own CI** |
+| Certifier | workrr's public workflow | Same workflow, run in the **customer's own CI** |
 | Signing | Keyless (Fulcio, public identity) | Customer-tenant key (or private Fulcio identity) |
 | Log | Full attestation in public Rekor | **Only the attestation's hash** in public Rekor (proves existence and time, reveals nothing); full attestation stays in the customer's private ledger repo |
 | Registry | Public index | Private vetted registry + policy authoring + audit trail + SSO |
@@ -218,11 +218,11 @@ publicly provable, but their content, names, and policies never leave the custom
 
 ## Enterprise source-control integration
 
-Customers **install the certifier into their CI**. They don't grant Workrr access to
+Customers **install the certifier into their CI**. They don't grant workrr access to
 their code.
 
 - **GitHub:** reusable workflow / Action (`workrr-trust/certify@<sha>`). Their
-  workflow identity signs; Workrr never sees source.
+  workflow identity signs; workrr never sees source.
 - **GitLab:** the customer adds the certifier steps to their own top-level
   `.gitlab-ci.yml`, vendored at a pinned commit. A remote include or component can't
   hold the `id_tokens` that keyless signing needs. The cert identity is then the
@@ -232,23 +232,23 @@ their code.
 - **Later, if needed:** a GitHub App / GitLab integration only for convenience (auto-PR
   policy updates, registry sync) — never for signing, and never required.
 
-"Workrr never sees your code" is both the strongest trust story and the smallest
+"workrr never sees your code" is both the strongest trust story and the smallest
 footprint. It's also the clearest answer to a security reviewer.
 
-## What Workrr actually runs
+## What workrr actually runs
 
 | | |
 |---|---|
 | In the trust path | **Nothing.** Public CI + Sigstore + git + Software Heritage + OpenTimestamps |
-| Workrr-held secrets | One offline root key (trust-policy file only) |
+| workrr-held secrets | One offline root key (trust-policy file only) |
 | Outside the trust path | The Cloudflare app: search/index UI, private-tier registry, billing, audit dashboards |
 
-If every Workrr server went dark, issued certificates would remain verifiable from
+If every workrr server went dark, issued certificates would remain verifiable from
 Rekor, any mirror, or Software Heritage.
 
 ## Honest limits
 
-- A transparency log proves Workrr *said* something and never changed its story. It
+- A transparency log proves workrr *said* something and never changed its story. It
   doesn't make the checks correct. Trust in the checks comes from public certifier
   code, recorded tool digests, reproducibility, and fast public revocation.
 - Keyless signing depends on Sigstore's Fulcio and the forges' OIDC issuers.

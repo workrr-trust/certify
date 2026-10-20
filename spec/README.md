@@ -1,6 +1,6 @@
-# Workrr Trust Certificate — Specification v0.1 (draft)
+# workrr Trust Certificate — Specification v0.1 (draft)
 
-A Workrr certificate is an [in-toto Statement v1](https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md)
+A workrr certificate is an [in-toto Statement v1](https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md)
 inside a DSSE envelope, signed keylessly through Sigstore and recorded in the public
 Rekor transparency log. This document is the contract every implementation (TypeScript,
 Go) must follow. Two implementations given the same artifact, policy, and ruleset must

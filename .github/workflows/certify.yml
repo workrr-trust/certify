@@ -1,4 +1,4 @@
-# Workrr Trust certifier — reusable workflow.
+# workrr Trust certifier — reusable workflow.
 #
 # This workflow's identity IS the certifier identity: Fulcio records
 #   https://github.com/workrr-trust/certify/.github/workflows/certify.yml@<ref>
@@ -156,7 +156,7 @@ jobs:
           cp "$BUNDLE" certificate/certificate.sigstore.json
           cp statement.json certificate/statement.json
           {
-            echo "### Workrr certificate issued"
+            echo "### workrr certificate issued"
             echo "- subject: \`${{ steps.run.outputs.subject-name }}\` \`${{ steps.run.outputs.subject-digest }}\`"
             echo "- level: **${{ steps.run.outputs.level }}**"
             echo "- verify: \`npx @workrr-trust/certify verify <path> --bundle certificate.sigstore.json\`"

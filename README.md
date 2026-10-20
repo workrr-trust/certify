@@ -6,7 +6,7 @@
 [![ci](https://github.com/workrr-trust/certify/actions/workflows/ci.yml/badge.svg)](https://github.com/workrr-trust/certify/actions/workflows/ci.yml)
 
 Certify and verify AI agent artifacts (skills, MCP servers, rulesets, `AGENTS.md`)
-with **publicly logged certificates anyone can verify without trusting Workrr**.
+with **publicly logged certificates anyone can verify without trusting workrr**.
 
 | Get it | |
 |---|---|
@@ -26,7 +26,7 @@ with **publicly logged certificates anyone can verify without trusting Workrr**.
 
 > Status: v0.1, pre-release. The path of this repo's
 > `.github/workflows/certify.yml` is the certifier's public signing identity, so
-> changes to it are changes to what Workrr signs.
+> changes to it are changes to what workrr signs.
 
 ## Certify in CI (GitHub)
 
@@ -70,7 +70,7 @@ Prebuilt binaries for Linux, macOS and Windows are attached to each
 `gh attestation verify <file> --repo workrr-trust/certify`.
 
 Checks the artifact digest, the Sigstore certificate chain and signature, Rekor
-inclusion, and that the signer is an accepted Workrr certifier identity. Pass a second
+inclusion, and that the signer is an accepted workrr certifier identity. Pass a second
 `--bundle` from the GitLab certifier for **Gold**: two forges with identical results.
 
 ## Local use
@@ -95,7 +95,7 @@ npm test
 
 - Revocation isn't checked yet; the revocation ledger ships in v0.2.
 - The trust policy is built into the CLI. v0.2 moves it to a TUF-signed file under the
-  offline Workrr root key, and pins certifier commits (Build Signer Digest).
+  offline workrr root key, and pins certifier commits (Build Signer Digest).
 - Actions are pinned by major version; pin to commit SHAs before v1.
 - Private repos sign with GitHub's private Sigstore instance (no public Rekor entry). The
   private tier uses its own trust root and the hash-only public log design.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://trust.workrr.ai/certificate/v0.1/schema.json",
-  "title": "Workrr Trust certificate predicate v0.1",
+  "title": "workrr Trust certificate predicate v0.1",
   "type": "object",
   "required": ["artifact", "source", "checks", "level", "certifier", "certifiedAt"],
   "additionalProperties": false,

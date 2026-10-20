@@ -174,7 +174,7 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 		if san == "" {
 			san = "unknown"
 		}
-		r := fail("signer is not an accepted Workrr certifier: "+san, statement)
+		r := fail("signer is not an accepted workrr certifier: "+san, statement)
 		r.SignerIdentity = signer.SAN
 		return r
 	}

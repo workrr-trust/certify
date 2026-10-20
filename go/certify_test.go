@@ -203,7 +203,7 @@ func TestVerifySigstorePublicGoodBundle(t *testing.T) {
 		t.Fatal("pinned policy should accept the signer")
 	}
 	if MatchSigner(&DefaultTrustPolicy, s) != nil {
-		t.Fatal("default policy must not accept a non-Workrr signer")
+		t.Fatal("default policy must not accept a non-workrr signer")
 	}
 
 	// Wrong digest → rejected by sigstore-go.
@@ -227,7 +227,7 @@ func TestVerifySigstorePublicGoodBundle(t *testing.T) {
 	if _, err := VerifySigstore(tb, tm, "sha512", digest); err == nil {
 		t.Fatal("verified a tampered signature")
 	}
-	// The full Workrr path rejects it before signature checks: not a Workrr predicate.
+	// The full workrr path rejects it before signature checks: not a workrr predicate.
 	r := VerifyBundle(bundlePath, strings.Repeat("0", 64), &DefaultTrustPolicy, &TrustedMaterialSource{Path: filepath.Join(dir, exp.TrustedRoot)})
 	if r.OK || r.Error != "unsupported predicate type: "+exp.PredicateType {
 		t.Fatalf("got %+v", r.Error)

@@ -1,4 +1,4 @@
-// Package certify is the Go implementation of the Workrr Trust certificate
+// Package certify is the Go implementation of the workrr Trust certificate
 // spec (spec/README.md). Given the same artifact, policy and ruleset it
 // produces byte-identical canonical `checks` to the TypeScript reference.
 package certify

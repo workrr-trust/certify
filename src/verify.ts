@@ -96,7 +96,7 @@ export async function verifyBundle(bundlePath: string, artifactDigest: string, p
   const identity = (signer.identity ?? {}) as Identity;
   const accepted = matchSigner(policy, identity);
   if (!accepted) {
-    return fail(`signer is not an accepted Workrr certifier: ${identity.subjectAlternativeName ?? "unknown"}`, {
+    return fail(`signer is not an accepted workrr certifier: ${identity.subjectAlternativeName ?? "unknown"}`, {
       statement,
       signerIdentity: identity.subjectAlternativeName,
     });
