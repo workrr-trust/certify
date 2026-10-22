@@ -94,6 +94,13 @@ The authority is **a policy, not a server**.
 - **The certifier is public code.** Anyone can read exactly what produced a
   certificate. Changing the checks means a new commit, which is a new, visible
   identity.
+- **Signed trust policy, keyless.** The implementation (spec §7) does not use a
+  long-lived root key. A release-tag run of `trust-policy.yml` signs the policy
+  with Sigstore, and `revoke.yml` signs revocations the same way. A Cloudflare
+  Worker (`services/trust-api/`) stores the blobs in R2 and indexes them in D1.
+  The worker is transport: verifiers check the signatures and reject a policy
+  sequence that goes backwards. The paragraph below is the earlier sketch of an
+  offline root; the keyless workflow is what verifiers implement.
 - **One offline root key** (hardware token, ideally split across 2+ holders) signs a
   small **trust-policy file** (TUF-style `root.json`) listing:
   - which certifier workflow identities and commits are accepted

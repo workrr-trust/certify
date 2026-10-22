@@ -30,10 +30,13 @@ type BundleResult struct {
 	SignerIdentity string `json:"signerIdentity,omitempty"`
 	// Statement is the attestation payload exactly as signed (generic JSON).
 	Statement any `json:"statement,omitempty"`
+	// LogIndexes are the Rekor log indexes carried in the bundle.
+	LogIndexes []string `json:"logIndexes,omitempty"`
 }
 
 type VerifyResult struct {
 	OK             bool           `json:"ok"`
+	Status         string         `json:"status,omitempty"`
 	Level          string         `json:"level,omitempty"`
 	ArtifactDigest string         `json:"artifactDigest"`
 	Source         string         `json:"source,omitempty"`
@@ -54,6 +57,16 @@ type VerificationGate struct {
 	PolicyDigest string
 	PolicyStatus string
 	Notes        []string
+}
+
+// VerifyOptions is the signed-policy hook on VerifyArtifact.
+// Leaving it zero keeps the v0.1 "revocation is not checked" note.
+type VerifyOptions struct {
+	Revocations           []*RevocationEntry
+	CheckRevocation       bool
+	Offline               bool
+	BaselinePolicyDigests map[string]string
+	ExpectedSource        string
 }
 
 // Signer is the certificate identity that signed a bundle.
@@ -292,9 +305,30 @@ func VerifySigstore(b *bundle.Bundle, tm root.TrustedMaterial, digestAlg string,
 	return &Signer{SAN: c.SubjectAlternativeName, Issuer: c.Extensions.Issuer, BuildSignerDigest: c.Extensions.BuildSignerDigest}, nil
 }
 
+func bundleLogIndexes(data []byte) []string {
+	var raw struct {
+		VerificationMaterial struct {
+			TlogEntries []struct {
+				LogIndex string `json:"logIndex"`
+			} `json:"tlogEntries"`
+		} `json:"verificationMaterial"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range raw.VerificationMaterial.TlogEntries {
+		if logIndexRe.MatchString(e.LogIndex) {
+			out = append(out, e.LogIndex)
+		}
+	}
+	return out
+}
+
 func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *TrustedMaterialSource) BundleResult {
+	var indexes []string
 	fail := func(msg string, statement any) BundleResult {
-		return BundleResult{BundlePath: bundlePath, OK: false, Error: msg, Statement: statement}
+		return BundleResult{BundlePath: bundlePath, OK: false, Error: msg, Statement: statement, LogIndexes: indexes}
 	}
 	data, err := os.ReadFile(bundlePath)
 	if err != nil {
@@ -308,6 +342,7 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fail("cannot read bundle: "+err.Error(), nil)
 	}
+	indexes = bundleLogIndexes(data)
 	if raw.DSSEEnvelope == nil {
 		return fail("bundle has no DSSE envelope (not an attestation)", nil)
 	}
@@ -362,7 +397,7 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 		r.SignerIdentity = signer.SAN
 		return r
 	}
-	return BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Statement: statement}
+	return BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Statement: statement, LogIndexes: indexes}
 }
 
 func predicateField(statement any, key string) any {
@@ -385,24 +420,59 @@ func predicateSource(statement any) string {
 	return uri
 }
 
-func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms *TrustedMaterialSource, expectedSource string) (*VerifyResult, error) {
+func policyDigestOf(statement any) string {
+	_, digest := predicatePolicy(statement)
+	return digest
+}
+
+func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms *TrustedMaterialSource, opts ...VerifyOptions) (*VerifyResult, error) {
+	var opt VerifyOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	expectedSource := opt.ExpectedSource
 	d, err := DigestArtifact(path)
 	if err != nil {
 		return nil, err
 	}
-	res := &VerifyResult{ArtifactDigest: d.SHA256, Bundles: []BundleResult{}, Notes: []string{"revocation is not checked in v0.1 (revocation ledger ships in v0.2)"}}
+	notes := []string{"revocation is not checked in v0.1 (revocation ledger ships in v0.2)"}
+	if opt.Offline {
+		notes = []string{OfflineWarning}
+	} else if opt.CheckRevocation {
+		notes = []string{}
+	}
+	res := &VerifyResult{ArtifactDigest: d.SHA256, Bundles: []BundleResult{}, Notes: notes}
 	var valid []BundleResult
+	revoked := false
 	for _, bp := range bundlePaths {
 		r := VerifyBundle(bp, d.SHA256, policy, tms)
+		if r.OK && opt.CheckRevocation && !opt.Offline {
+			if msg := RevocationError(opt.Revocations, d.SHA256, r.LogIndexes); msg != "" {
+				r.OK = false
+				r.Error = msg
+			}
+		}
+		if r.OK && BaselineRejected(policyDigestOf(r.Statement), opt.BaselinePolicyDigests) {
+			r.OK = false
+			r.Error = "policy digest is not in the signed trust policy"
+		}
+		if strings.HasPrefix(r.Error, "REVOKED:") {
+			revoked = true
+		}
 		res.Bundles = append(res.Bundles, r)
 		if r.OK {
 			valid = append(valid, r)
 		}
 	}
 	if len(valid) == 0 {
+		res.Status = "rejected"
+		if revoked {
+			res.Status = "REVOKED"
+		}
 		return res, nil
 	}
 	res.OK = true
+	res.Status = "verified"
 
 	// Gold: two forges, silver on both, identical checks (spec §4).
 	var silver []BundleResult
@@ -453,5 +523,8 @@ func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms 
 	res.PolicyDigest = gate.PolicyDigest
 	res.PolicyStatus = gate.PolicyStatus
 	res.Notes = gate.Notes
+	if !gate.OK {
+		res.Status = "rejected"
+	}
 	return res, nil
 }

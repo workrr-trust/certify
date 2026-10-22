@@ -24,5 +24,12 @@ The path of `.github/workflows/certify.yml` in this repo is the signing identity
 recorded in every certificate, so write access to this repo is effectively signing
 authority. Access is limited to a small set of org admins. The built-in trust policy
 accepts only the released tags v0.1.0 and v0.1.1, each pinned to its Build Signer
-Digest, and workflow actions are pinned by commit SHA. Distributing that policy as a
-TUF-signed file under the offline root key is still planned for v0.2.
+Digest, and workflow actions are pinned by commit SHA. The signed trust policy's
+embedded fallback is that same set.
+
+`.github/workflows/trust-policy.yml` and `.github/workflows/revoke.yml` are the
+identities that sign the trust policy and revocations. Both are accepted only
+from a release tag. Their Build Signer Digests are not pinned yet; pin them in
+`src/trust-feed.ts` and `go/trustfeed.go` after the first tagged run. The trust
+API that distributes those documents does not need to be trusted: clients check
+the signatures.

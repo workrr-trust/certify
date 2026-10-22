@@ -70,11 +70,20 @@ Prebuilt binaries for Linux, macOS and Windows are attached to each
 `gh attestation verify <file> --repo workrr-trust/certify`.
 
 Checks the artifact digest, the Sigstore certificate chain and signature, Rekor
-inclusion, and that the signer is a released workrr certifier tag pinned in the trust
-policy. The output names the publisher repository and the policy name and digest.
-Silver, gold, and banded are reported only when that digest is the known baseline.
-`--source <repo>` fails when the certificate's publisher does not match. The default
-trust policy has no second forge, so it does not award **Gold**.
+inclusion, that the signer is a released workrr certifier tag pinned in the trust
+policy, and that the certificate is not revoked. The output names the publisher
+repository and the policy name and digest. Silver, gold, and banded are reported
+only when that digest is the known baseline. `--source <repo>` fails when the
+certificate's publisher does not match. The default trust policy has no second
+forge, so it does not award **Gold**.
+
+`verify` fetches the signed trust policy from the trust API (cached for one hour)
+and the revocation feed on every run. `--offline` uses the policy embedded in this
+build and does not check revocation. It prints
+`offline: using the embedded trust policy; revocation was not checked`. A revoked
+certificate can still verify in that mode. The policy and revocation formats are
+[spec §7](spec/README.md). Until the trust API is deployed, fetch failure falls
+back to the embedded policy (the v0.1.0 and v0.1.1 tag pins) and says so.
 
 ## Local use
 
@@ -96,15 +105,19 @@ npm test
 
 ## Known limits (v0.1)
 
-- Revocation isn't checked yet; the revocation ledger ships in v0.2.
-- The trust policy is built into the CLI. It accepts only
+- The signed trust policy and revocation feed are implemented ([spec §7](spec/README.md),
+  [trust API](docs/trust-api.md)). No policy has been signed or deployed yet, so
+  `verify` falls back to the embedded policy and does not see revocations until
+  that deploy. That fallback is the v0.1.2 trust set: only
   `certify.yml@refs/tags/v0.1.0` and `@refs/tags/v0.1.1`, each pinned to the Build
   Signer Digest Fulcio recorded for that annotated tag (the tag object, not the peeled
-  commit). `refs/heads/main` is not accepted. v0.2 moves the same policy to a
-  TUF-signed file under the offline workrr root key. A release is not trusted until
-  its tag object is added; this commit cannot pin a tag that does not exist yet.
+  commit). `refs/heads/main` is not accepted, and there is no GitLab certifier.
+  `EMBEDDED_POLICY_SEQUENCE` is still 0. The policy-signer and revoke-signer Build
+  Signer Digests are still empty. A release is not trusted until its tag object is added.
 - A policy digest other than `workrr-baseline-v0.1` does not verify at a baseline
   level. Reusing that name on a different document is rejected.
+- `--offline` skips revocation on purpose. See the warning it prints.
+- Workflow actions are pinned by commit SHA.
 - Private repos sign with GitHub's private Sigstore instance (no public Rekor entry). The
   private tier uses its own trust root and the hash-only public log design.
 - There is no GitLab certifier in the trust set, so the default policy does not award
