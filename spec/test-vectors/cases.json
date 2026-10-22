@@ -174,5 +174,96 @@
         { "path": ".git/HEAD", "text": "ignored by the dirhash" }
       ]
     }
-  ]
+  ],
+  "trust": {
+    "$comment": "Verifier rejection cases. Both implementations assert these directly; they are not part of expected.json. buildSignerDigest values are annotated tag objects (git rev-parse <tag>), which is what Fulcio records, not the peeled commit.",
+    "signers": [
+      {
+        "id": "main-branch-signer",
+        "san": "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/heads/main",
+        "issuer": "https://token.actions.githubusercontent.com",
+        "buildSignerDigest": "9fbe3e453cbd80bef0301f08db79408bb12c7d64",
+        "accepted": false
+      },
+      {
+        "id": "released-v0.1.0",
+        "san": "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.0",
+        "issuer": "https://token.actions.githubusercontent.com",
+        "buildSignerDigest": "9fbe3e453cbd80bef0301f08db79408bb12c7d64",
+        "accepted": true
+      },
+      {
+        "id": "released-v0.1.1",
+        "san": "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.1",
+        "issuer": "https://token.actions.githubusercontent.com",
+        "buildSignerDigest": "78d8c1a98c929b7b1c1b532c25256582a84887b1",
+        "accepted": true
+      },
+      {
+        "id": "v0.1.0-peeled-commit",
+        "san": "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.0",
+        "issuer": "https://token.actions.githubusercontent.com",
+        "buildSignerDigest": "edf382958dd7ce070db0ed13af1cc8c31a150901",
+        "accepted": false
+      },
+      {
+        "id": "gitlab-certifier",
+        "san": "https://gitlab.com/workrr-trust/certify-gitlab/.gitlab-ci.yml@refs/tags/v0.1.0",
+        "issuer": "https://gitlab.com",
+        "buildSignerDigest": "9fbe3e453cbd80bef0301f08db79408bb12c7d64",
+        "accepted": false
+      }
+    ],
+    "policies": [
+      {
+        "id": "unknown-policy-digest",
+        "policyName": "team-policy",
+        "policyDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "certificateLevel": "silver",
+        "status": "custom",
+        "ok": false,
+        "headline": "custom policy, not baseline"
+      },
+      {
+        "id": "reused-baseline-name",
+        "policyName": "workrr-baseline-v0.1",
+        "policyDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "certificateLevel": "silver",
+        "status": "reject",
+        "ok": false,
+        "headline": "NOT VERIFIED",
+        "reason": "policy name \"workrr-baseline-v0.1\" is reserved; digest is not the baseline"
+      },
+      {
+        "id": "baseline-policy",
+        "policyName": "workrr-baseline-v0.1",
+        "policyDigest": "sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19",
+        "certificateLevel": "silver",
+        "status": "baseline",
+        "ok": true,
+        "headline": "VERIFIED · level silver"
+      }
+    ],
+    "sources": [
+      {
+        "id": "source-mismatch",
+        "certificate": "https://github.com/workrr-trust/sample-skills",
+        "flag": "https://github.com/evil/other",
+        "match": false,
+        "note": "source mismatch: certificate is for https://github.com/workrr-trust/sample-skills, --source is https://github.com/evil/other"
+      },
+      {
+        "id": "source-match-ssh",
+        "certificate": "https://github.com/workrr-trust/sample-skills.git",
+        "flag": "git@github.com:workrr-trust/sample-skills",
+        "match": true
+      },
+      {
+        "id": "source-match-shorthand",
+        "certificate": "https://github.com/workrr-trust/sample-skills",
+        "flag": "workrr-trust/sample-skills",
+        "match": true
+      }
+    ]
+  }
 }

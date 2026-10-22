@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -170,6 +171,87 @@ func loadVectors(t *testing.T) (vectorCases, vectorExpected, map[string]*Policy)
 		policies[name] = p
 	}
 	return cases, expected, policies
+}
+
+func TestTrustVectors(t *testing.T) {
+	var doc struct {
+		Trust struct {
+			Signers []struct {
+				ID                string `json:"id"`
+				SAN               string `json:"san"`
+				Issuer            string `json:"issuer"`
+				BuildSignerDigest string `json:"buildSignerDigest"`
+				Accepted          bool   `json:"accepted"`
+			} `json:"signers"`
+			Policies []struct {
+				ID               string `json:"id"`
+				PolicyName       string `json:"policyName"`
+				PolicyDigest     string `json:"policyDigest"`
+				CertificateLevel string `json:"certificateLevel"`
+				Status           string `json:"status"`
+				OK               bool   `json:"ok"`
+				Headline         string `json:"headline"`
+				Reason           string `json:"reason"`
+			} `json:"policies"`
+			Sources []struct {
+				ID          string `json:"id"`
+				Certificate string `json:"certificate"`
+				Flag        string `json:"flag"`
+				Match       bool   `json:"match"`
+				Note        string `json:"note"`
+			} `json:"sources"`
+		} `json:"trust"`
+	}
+	readJSONFile(t, filepath.Join(vectorsDir, "cases.json"), &doc)
+	revocation := "revocation is not checked in v0.1 (revocation ledger ships in v0.2)"
+	for _, signer := range doc.Trust.Signers {
+		t.Run("signer "+signer.ID, func(t *testing.T) {
+			got := MatchSigner(&DefaultTrustPolicy, &Signer{SAN: signer.SAN, Issuer: signer.Issuer, BuildSignerDigest: signer.BuildSignerDigest})
+			if (got != nil) != signer.Accepted {
+				t.Fatalf("accepted=%v, want %v", got != nil, signer.Accepted)
+			}
+		})
+	}
+	for _, policy := range doc.Trust.Policies {
+		t.Run("policy "+policy.ID, func(t *testing.T) {
+			gate := ApplyVerificationGates(policy.CertificateLevel, [][2]string{{policy.PolicyName, policy.PolicyDigest}}, []string{"https://github.com/workrr-trust/sample-skills"}, "", []string{revocation})
+			if gate.PolicyStatus != policy.Status || gate.OK != policy.OK {
+				t.Fatalf("status %s ok %v, want %s ok %v", gate.PolicyStatus, gate.OK, policy.Status, policy.OK)
+			}
+			if got := VerificationHeadline(gate.OK, gate.Level, gate.PolicyStatus, gate.Notes); got != policy.Headline {
+				t.Fatalf("headline %q, want %q", got, policy.Headline)
+			}
+			if policy.Status != "baseline" && gate.Level != "" {
+				t.Fatalf("reported baseline level %q", gate.Level)
+			}
+			if policy.Reason != "" && !slices.Contains(gate.Notes, policy.Reason) {
+				t.Fatalf("notes %v", gate.Notes)
+			}
+			if policy.Status == "baseline" && policy.PolicyDigest != BaselinePolicy().Digest() {
+				t.Fatalf("vector baseline digest %s, implementation %s", policy.PolicyDigest, BaselinePolicy().Digest())
+			}
+		})
+	}
+	for _, source := range doc.Trust.Sources {
+		t.Run("source "+source.ID, func(t *testing.T) {
+			if SourceMatches(source.Certificate, source.Flag) != source.Match {
+				t.Fatalf("match=%v, want %v", !source.Match, source.Match)
+			}
+			gate := ApplyVerificationGates("silver", [][2]string{{BaselinePolicyName, BaselinePolicy().Digest()}}, []string{source.Certificate}, source.Flag, []string{revocation})
+			if source.Match {
+				if !gate.OK || gate.Level != "silver" || VerificationHeadline(gate.OK, gate.Level, gate.PolicyStatus, gate.Notes) != "VERIFIED · level silver" {
+					t.Fatalf("gate %+v", gate)
+				}
+				return
+			}
+			if gate.OK || gate.Level != "" || VerificationHeadline(gate.OK, gate.Level, gate.PolicyStatus, gate.Notes) != "NOT VERIFIED" {
+				t.Fatalf("gate %+v headline %s", gate, VerificationHeadline(gate.OK, gate.Level, gate.PolicyStatus, gate.Notes))
+			}
+			if !slices.Contains(gate.Notes, source.Note) {
+				t.Fatalf("notes %v", gate.Notes)
+			}
+		})
+	}
 }
 
 func TestVectorsDigests(t *testing.T) {

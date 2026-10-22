@@ -84,8 +84,12 @@ implementation must pass them.
   identity, and recorded in public Rekor.
 - On GitHub the identity is the reusable workflow
   `https://github.com/workrr-trust/certify/.github/workflows/certify.yml@<ref>`, with
-  Build Signer Digest (OID `1.3.6.1.4.1.57264.1.10`) = the certifier commit.
-- Only identities listed in the signed trust policy are accepted.
+  Build Signer Digest (OID `1.3.6.1.4.1.57264.1.10`) = `job_workflow_sha`. For an
+  annotated tag that is the tag object, not the peeled commit.
+- The built-in trust policy accepts only
+  `certify.yml@refs/tags/v0.1.0` (digest `9fbe3e453cbd80bef0301f08db79408bb12c7d64`)
+  and `certify.yml@refs/tags/v0.1.1` (digest `78d8c1a98c929b7b1c1b532c25256582a84887b1`).
+  `refs/heads/main` is not accepted. No GitLab signer is listed.
 
 ## 6. Verification
 
@@ -94,9 +98,20 @@ A verifier must:
 2. Check `predicateType` is a supported version.
 3. Verify the Sigstore bundle: certificate chain, signature, and Rekor inclusion.
 4. Match the signer identity (SAN, issuer, Build Signer Digest) against the trust policy.
-5. Check the certificate isn't revoked *(revocation ledger: v0.2)*.
-6. For `gold`: repeat 1–4 for a second bundle from a different forge and compare
-   `checks` byte-for-byte as canonical JSON.
+   A SAN of `refs/heads/main`, an unlisted tag, or a digest other than the one pinned
+   for that tag is rejected.
+5. Read `checks.policy.policyName` and `checks.policy.policyDigest` and report both.
+   The name `workrr-baseline-v0.1` is reserved: that name with any other digest is
+   rejected. Any other digest is not a baseline result, and the verifier must not
+   report `silver`, `gold`, or `banded` for it.
+6. If the caller passes a source repository, it must match `source.uri` after
+   normalizing `.git`, embedded credentials, and `git@host:org/repo`. `owner/repo`
+   and `host/owner/repo` match that URL. A mismatch is a failed verification and is
+   not reported at a baseline level.
+7. Check the certificate isn't revoked *(revocation ledger: v0.2)*.
+8. For `gold`: repeat 1–6 for a second bundle from a different forge, require both
+   policies to be the known baseline, and compare `checks` byte-for-byte as canonical
+   JSON. The built-in policy has no second forge, so it does not award gold.
 
 ## Versioning
 

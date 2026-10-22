@@ -26,7 +26,8 @@ workrr digest  <path>
 workrr test    <path> [--out tests.json]
 workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                       [--statement-out statement.json] [--predicate-out predicate.json]
-workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json] [--json]
+workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
+                      [--source <repo>] [--json]
 ```
 
 One addition: `verify --trusted-root trusted_root.json` pins a Sigstore trusted root
@@ -38,7 +39,10 @@ instead of fetching the public-good root via TUF (useful offline or air-gapped).
 to the Fulcio root, signed certificate timestamp, DSSE signature, Rekor inclusion with an
 integrated timestamp, and the in-toto subject digest. The signer identity (SAN regex,
 issuer, Build Signer Digest OID `1.3.6.1.4.1.57264.1.10`) is then matched against the
-same default trust policy as the TypeScript CLI.
+same default trust policy as the TypeScript CLI: released tags v0.1.0 and v0.1.1
+only, each pinned to its Build Signer Digest. `verify` prints the publisher
+repository and the policy name and digest. A digest that is not the baseline is not
+reported as silver, gold, or banded. `--source <repo>` fails on a publisher mismatch.
 
 `TestVerifySigstorePublicGoodBundle` verifies a real public-good bundle (npm provenance
 for `sigstore@5.0.0`) offline against a pinned trusted root, and checks that a wrong

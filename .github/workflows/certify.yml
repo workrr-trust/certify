@@ -27,7 +27,7 @@ on:
         type: string
         required: true
       policy:
-        description: "Optional path to a policy JSON in the caller repo (default: workrr baseline)"
+        description: "Optional path to a policy JSON in the caller repo (default: workrr baseline). The name workrr-baseline-v0.1 is reserved for that baseline."
         type: string
         default: ""
     outputs:
@@ -74,17 +74,17 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: subject
           persist-credentials: false
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ needs.resolve.outputs.certifier-repo }}
           ref: ${{ needs.resolve.outputs.certifier-sha }}
           path: .workrr-certifier
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Build certifier
@@ -95,7 +95,7 @@ jobs:
           ARTIFACT_PATH: ${{ inputs.path }}
         # A failing suite still produces a report; certify decides.
         run: node .workrr-certifier/dist/cli.js test "subject/$ARTIFACT_PATH" --out tests.json || true
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: workrr-tests-report
           path: tests.json
@@ -112,23 +112,23 @@ jobs:
       level: ${{ steps.run.outputs.level }}
       subject-digest: ${{ steps.run.outputs.subject-digest }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: subject
           persist-credentials: false
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ needs.resolve.outputs.certifier-repo }}
           ref: ${{ needs.resolve.outputs.certifier-sha }}
           path: .workrr-certifier
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Build certifier
         working-directory: .workrr-certifier
         run: npm ci --ignore-scripts && npm run build
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: workrr-tests-report
       - name: Certify
@@ -142,7 +142,7 @@ jobs:
           node .workrr-certifier/dist/cli.js certify "${args[@]}"
       - name: Sign and log to Rekor
         id: attest
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.run.outputs.subject-name }}
           subject-digest: ${{ steps.run.outputs.subject-digest }}
@@ -161,7 +161,7 @@ jobs:
             echo "- level: **${{ steps.run.outputs.level }}**"
             echo "- verify: \`npx @workrr-trust/certify verify <path> --bundle certificate.sigstore.json\`"
           } >>"$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: workrr-certificate
           path: certificate/

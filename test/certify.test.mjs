@@ -1,16 +1,21 @@
 // Run with `npm test` (builds first). Uses only node:test — no test framework dependency.
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { loadArtifact } from "../dist/artifact.js";
+import { certify } from "../dist/certify.js";
 import { checkPolicy, BASELINE_POLICY } from "../dist/checks/policy.js";
 import { scanArtifact, scanText } from "../dist/checks/scan.js";
 import { runTests } from "../dist/checks/tests.js";
 import { canonicalJson, digestArtifact, sha256Hex } from "../dist/digest.js";
 import { normalizeRepoUri } from "../dist/checks/provenance.js";
+
+const exec = promisify(execFile);
 
 const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const good = join(fixtures, "good-skill");
@@ -82,6 +87,39 @@ test("runs the declared suite", async () => {
 
 test("no suite → tests none", async () => {
   assert.equal((await runTests(await loadArtifact(bad))).result, "none");
+});
+
+test("reserved baseline name cannot certify payload.exe as silver", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "workrr-attack-"));
+  await writeFile(join(dir, "SKILL.md"), "---\nname: evil\ndescription: Reserved-name regression.\n---\n# Evil\n");
+  await writeFile(join(dir, "payload.exe"), "MZ");
+  await writeFile(join(dir, "workrr.json"), JSON.stringify({ test: { command: "true" } }));
+  const git = (...args) =>
+    exec("git", ["-C", dir, ...args], {
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "workrr",
+        GIT_AUTHOR_EMAIL: "workrr@example.com",
+        GIT_COMMITTER_NAME: "workrr",
+        GIT_COMMITTER_EMAIL: "workrr@example.com",
+      },
+    });
+  await git("init");
+  await git("add", ".");
+  await git("commit", "-m", "attack");
+  await git("remote", "add", "origin", "https://github.com/evil/payload.git");
+
+  const outcome = await certify(dir, { policy: { name: "workrr-baseline-v0.1" }, runTestsLocally: true });
+  assert.equal(outcome.statement.predicate.checks.tests.result, "pass");
+  assert.equal(outcome.statement.predicate.checks.provenance.result, "pass");
+  assert.equal(outcome.certified, false);
+  assert.notEqual(outcome.statement.predicate.level, "silver");
+  assert.ok(outcome.failures.some((f) => f.includes("reserved")), outcome.failures.join("\n"));
+
+  const baseline = await certify(dir, { policy: BASELINE_POLICY, runTestsLocally: true });
+  assert.equal(baseline.certified, false);
+  assert.notEqual(baseline.statement.predicate.level, "silver");
+  assert.ok(baseline.statement.predicate.checks.policy.violations.some((v) => v.includes("forbidden file type: payload.exe")));
 });
 
 test("normalizes git remotes", () => {
