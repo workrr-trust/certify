@@ -22,5 +22,7 @@ high or critical findings from the pinned ruleset," **not** that an artifact is 
 
 The path of `.github/workflows/certify.yml` in this repo is the signing identity
 recorded in every certificate, so write access to this repo is effectively signing
-authority. Access is limited to a small set of org admins. Pinning accepted certifier
-commits in a signed trust policy is planned for v0.2.
+authority. Access is limited to a small set of org admins. The built-in trust policy
+accepts only the released tags v0.1.0 and v0.1.1, each pinned to its Build Signer
+Digest, and workflow actions are pinned by commit SHA. Distributing that policy as a
+TUF-signed file under the offline root key is still planned for v0.2.

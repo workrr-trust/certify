@@ -70,8 +70,11 @@ Prebuilt binaries for Linux, macOS and Windows are attached to each
 `gh attestation verify <file> --repo workrr-trust/certify`.
 
 Checks the artifact digest, the Sigstore certificate chain and signature, Rekor
-inclusion, and that the signer is an accepted workrr certifier identity. Pass a second
-`--bundle` from the GitLab certifier for **Gold**: two forges with identical results.
+inclusion, and that the signer is a released workrr certifier tag pinned in the trust
+policy. The output names the publisher repository and the policy name and digest.
+Silver, gold, and banded are reported only when that digest is the known baseline.
+`--source <repo>` fails when the certificate's publisher does not match. The default
+trust policy has no second forge, so it does not award **Gold**.
 
 ## Local use
 
@@ -87,17 +90,22 @@ npm test
 | Check | Claim |
 |---|---|
 | provenance | The artifact is committed and unchanged at the recorded source commit |
-| policy | Conforms to the named policy, pinned by digest (default: `workrr-baseline-v0.1`) |
+| policy | Conforms to the named policy, pinned by digest. The name `workrr-baseline-v0.1` is reserved for that baseline; a verifier reports a baseline level only for its digest |
 | scan | No high/critical findings from ruleset `workrr-scan-v0.1`, pinned by digest. **Not** "safe" or "injection-free." |
 | tests | The artifact's own declared suite passed. Without a suite the level is `banded`. |
 
 ## Known limits (v0.1)
 
 - Revocation isn't checked yet; the revocation ledger ships in v0.2.
-- The trust policy is built into the CLI. v0.2 moves it to a TUF-signed file under the
-  offline workrr root key, and pins certifier commits (Build Signer Digest).
-- Actions are pinned by major version; pin to commit SHAs before v1.
+- The trust policy is built into the CLI. It accepts only
+  `certify.yml@refs/tags/v0.1.0` and `@refs/tags/v0.1.1`, each pinned to the Build
+  Signer Digest Fulcio recorded for that annotated tag (the tag object, not the peeled
+  commit). `refs/heads/main` is not accepted. v0.2 moves the same policy to a
+  TUF-signed file under the offline workrr root key. A release is not trusted until
+  its tag object is added; this commit cannot pin a tag that does not exist yet.
+- A policy digest other than `workrr-baseline-v0.1` does not verify at a baseline
+  level. Reusing that name on a different document is rejected.
 - Private repos sign with GitHub's private Sigstore instance (no public Rekor entry). The
   private tier uses its own trust root and the hash-only public log design.
-- GitLab certifier (`workrr-trust/certify-gitlab`) isn't built yet, so no Gold
-  certificates until it is.
+- There is no GitLab certifier in the trust set, so the default policy does not award
+  Gold.

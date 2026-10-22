@@ -3,6 +3,7 @@ package certify
 import (
 	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -87,8 +88,8 @@ func TestJSToLower(t *testing.T) {
 func TestNormalizeRepoURI(t *testing.T) {
 	for in, want := range map[string]string{
 		"git@github.com:workrr-trust/certify.git": "https://github.com/workrr-trust/certify",
-		"https://token@github.com/a/b.git":          "https://github.com/a/b",
-		"https://gitlab.com/a/b":                    "https://gitlab.com/a/b",
+		"https://token@github.com/a/b.git":        "https://github.com/a/b",
+		"https://gitlab.com/a/b":                  "https://gitlab.com/a/b",
 	} {
 		if got := NormalizeRepoURI(in); got != want {
 			t.Errorf("%s → %s, want %s", in, got, want)
@@ -133,16 +134,96 @@ func TestPolicyOverridesChangeDigest(t *testing.T) {
 	}
 }
 
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=workrr",
+		"GIT_AUTHOR_EMAIL=workrr@example.com",
+		"GIT_COMMITTER_NAME=workrr",
+		"GIT_COMMITTER_EMAIL=workrr@example.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// A skill with payload.exe, a one-line policy that reuses the baseline name,
+// and a test command of `true` must not certify as silver.
+func TestReservedBaselineNameDoesNotReachSilver(t *testing.T) {
+	dir := t.TempDir()
+	skill := "---\nname: evil\ndescription: Reserved-name regression.\n---\n# Evil\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(skill), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "payload.exe"), []byte("MZ"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "workrr.json"), []byte(`{"test":{"command":"true"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "init")
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-m", "attack")
+	gitIn(t, dir, "remote", "add", "origin", "https://github.com/evil/payload.git")
+
+	policy, err := ParsePolicy([]byte(`{"name":"workrr-baseline-v0.1"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := Certify(dir, CertifyOptions{Policy: policy, RunTestsLocally: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Statement.Predicate.Checks.Tests.Result != "pass" {
+		t.Fatalf("tests: %+v", outcome.Statement.Predicate.Checks.Tests)
+	}
+	if outcome.Statement.Predicate.Checks.Provenance.Result != "pass" {
+		t.Fatalf("provenance: %+v", outcome.Statement.Predicate.Checks.Provenance)
+	}
+	if outcome.Certified {
+		t.Fatal("certified the reserved-name policy")
+	}
+	if outcome.Statement.Predicate.Level == "silver" {
+		t.Fatalf("reached silver: %v", outcome.Failures)
+	}
+	if !slices.ContainsFunc(outcome.Failures, func(f string) bool { return strings.Contains(f, "reserved") }) {
+		t.Fatalf("failures: %v", outcome.Failures)
+	}
+	// The real baseline still rejects the executable, and still does not say silver.
+	base, err := Certify(dir, CertifyOptions{Policy: BaselinePolicy(), RunTestsLocally: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.Certified || base.Statement.Predicate.Level == "silver" {
+		t.Fatalf("baseline certified payload.exe: %+v", base.Failures)
+	}
+	if !slices.ContainsFunc(base.Statement.Predicate.Checks.Policy.Violations, func(v string) bool {
+		return strings.Contains(v, "forbidden file type: payload.exe")
+	}) {
+		t.Fatalf("baseline violations: %v", base.Statement.Predicate.Checks.Policy.Violations)
+	}
+}
+
 func TestMatchSigner(t *testing.T) {
-	gh := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.0", Issuer: "https://token.actions.githubusercontent.com", BuildSignerDigest: "abc"}
+	const tagV010 = "9fbe3e453cbd80bef0301f08db79408bb12c7d64"
+	gh := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.0", Issuer: "https://token.actions.githubusercontent.com", BuildSignerDigest: tagV010}
 	if s := MatchSigner(&DefaultTrustPolicy, gh); s == nil || s.Forge != ForgeGitHub {
 		t.Fatalf("expected github signer, got %+v", s)
 	}
+	v011 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.1", Issuer: gh.Issuer, BuildSignerDigest: "78d8c1a98c929b7b1c1b532c25256582a84887b1"}
+	if MatchSigner(&DefaultTrustPolicy, v011) == nil {
+		t.Fatal("rejected the pinned v0.1.1 tag")
+	}
 	for _, bad := range []*Signer{
-		{SAN: gh.SAN + "x", Issuer: gh.Issuer},
-		{SAN: strings.Replace(gh.SAN, "workrr-trust", "evil", 1), Issuer: gh.Issuer},
-		{SAN: gh.SAN, Issuer: "https://gitlab.com"},
-		{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/heads/dev", Issuer: gh.Issuer},
+		{SAN: gh.SAN + "x", Issuer: gh.Issuer, BuildSignerDigest: tagV010},
+		{SAN: strings.Replace(gh.SAN, "workrr-trust", "evil", 1), Issuer: gh.Issuer, BuildSignerDigest: tagV010},
+		{SAN: gh.SAN, Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
+		{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/heads/main", Issuer: gh.Issuer, BuildSignerDigest: tagV010},
+		{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/heads/dev", Issuer: gh.Issuer, BuildSignerDigest: tagV010},
+		// Peeled commit, not the annotated tag object Fulcio records.
+		{SAN: gh.SAN, Issuer: gh.Issuer, BuildSignerDigest: "edf382958dd7ce070db0ed13af1cc8c31a150901"},
+		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab/.gitlab-ci.yml@refs/tags/v0.1.0", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
 	} {
 		if s := MatchSigner(&DefaultTrustPolicy, bad); s != nil {
 			t.Errorf("accepted %+v", bad)
@@ -154,7 +235,7 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&pinned, gh) != nil {
 		t.Error("accepted an unpinned certifier commit")
 	}
-	pinned.Signers[0].BuildSignerDigests = []string{"abc"}
+	pinned.Signers[0].BuildSignerDigests = []string{tagV010}
 	if MatchSigner(&pinned, gh) == nil {
 		t.Error("rejected a pinned certifier commit")
 	}

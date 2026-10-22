@@ -25,10 +25,13 @@ type Policy struct {
 	raw any
 }
 
+// BaselinePolicyName is reserved. A custom policy may not reuse it.
+const BaselinePolicyName = "workrr-baseline-v0.1"
+
 // BaselinePolicy is workrr-baseline-v0.1.
 func BaselinePolicy() *Policy {
 	p, err := ParsePolicy([]byte(`{
-		"name": "workrr-baseline-v0.1",
+		"name": "` + BaselinePolicyName + `",
 		"maxTotalBytes": 5000000,
 		"forbiddenExtensions": [".exe", ".dll", ".so", ".dylib", ".bin", ".jar", ".class", ".pyc"],
 		"requiredSkillFields": ["name", "description"]
@@ -138,11 +141,26 @@ func CheckPolicy(a *Artifact, p *Policy) PolicyResult {
 	if p.RequireLicense && !slices.ContainsFunc(files, func(f ArtifactFile) bool { return licenseRe.MatchString(f.Path) }) {
 		violations = append(violations, "no LICENSE file")
 	}
+	if reserved := baselineNameViolation(p); reserved != "" {
+		violations = append(violations, reserved)
+	}
 	result := "pass"
 	if len(violations) > 0 {
 		result = "fail"
 	}
 	return PolicyResult{Result: result, PolicyName: p.Name, PolicyDigest: p.Digest(), Violations: violations}
+}
+
+// baselineNameViolation reports when a policy reuses the baseline name without
+// being the baseline document. Empty means the name is not being misused.
+func baselineNameViolation(p *Policy) string {
+	if p == nil || p.Name == nil || *p.Name != BaselinePolicyName {
+		return ""
+	}
+	if p.Digest() == BaselinePolicy().Digest() {
+		return ""
+	}
+	return `policy name "` + BaselinePolicyName + `" is reserved for the baseline policy`
 }
 
 var toolSplitRe = regexp.MustCompile(`[,` + JSWhitespaceClass + `]+`)

@@ -3,7 +3,9 @@
 import { readFile } from "node:fs/promises";
 import { verify as sigstoreVerify } from "sigstore";
 import { PREDICATE_TYPE, type Statement } from "./certify.js";
-import { canonicalJson, digestArtifact } from "./digest.js";
+import { BASELINE_POLICY, BASELINE_POLICY_NAME } from "./checks/policy.js";
+import { normalizeRepoUri } from "./checks/provenance.js";
+import { canonicalJson, digestArtifact, jsonDigest } from "./digest.js";
 import { DEFAULT_TRUST_POLICY, type AcceptedSigner, type Forge, type TrustPolicy } from "./trust-policy.js";
 
 const OID_BUILD_SIGNER_DIGEST = "1.3.6.1.4.1.57264.1.10";
@@ -17,11 +19,27 @@ export type BundleResult = {
   statement?: Statement;
 };
 
+export type PolicyStatus = "baseline" | "custom" | "reject";
+
 export type VerifyResult = {
   ok: boolean;
   level?: "gold" | "silver" | "banded";
   artifactDigest: string;
+  source?: string;
+  policyName?: string;
+  policyDigest?: string;
+  policyStatus?: PolicyStatus;
   bundles: BundleResult[];
+  notes: string[];
+};
+
+export type VerificationGate = {
+  ok: boolean;
+  level?: VerifyResult["level"];
+  source?: string;
+  policyName?: string;
+  policyDigest?: string;
+  policyStatus?: PolicyStatus;
   notes: string[];
 };
 
@@ -53,14 +71,128 @@ export function describeSigner(identity: Identity): { san: string; issuer?: stri
   };
 }
 
-export function matchSigner(policy: TrustPolicy, identity: Identity): AcceptedSigner | undefined {
-  const { san, issuer, buildSignerDigest } = describeSigner(identity);
+export function matchDescribedSigner(
+  policy: TrustPolicy,
+  signer: { san: string; issuer?: string; buildSignerDigest?: string },
+): AcceptedSigner | undefined {
   return policy.signers.find(
     (s) =>
-      s.issuer === issuer &&
-      new RegExp(s.subjectAlternativeName).test(san) &&
-      (s.buildSignerDigests.length === 0 || (buildSignerDigest !== undefined && s.buildSignerDigests.includes(buildSignerDigest))),
+      s.issuer === signer.issuer &&
+      new RegExp(s.subjectAlternativeName).test(signer.san) &&
+      (s.buildSignerDigests.length === 0 ||
+        (signer.buildSignerDigest !== undefined && s.buildSignerDigests.includes(signer.buildSignerDigest))),
   );
+}
+
+export function matchSigner(policy: TrustPolicy, identity: Identity): AcceptedSigner | undefined {
+  return matchDescribedSigner(policy, describeSigner(identity));
+}
+
+export function baselinePolicyDigest(): string {
+  return jsonDigest(BASELINE_POLICY);
+}
+
+export type PolicyAssessment = {
+  status: PolicyStatus;
+  policyName?: string;
+  policyDigest?: string;
+  reason?: string;
+};
+
+// baseline: name and digest are the known baseline.
+// reject: the reserved baseline name is reused with any other digest, or the
+// baseline digest is paired with a different name.
+// custom: any other digest. Callers must not report a baseline level.
+export function assessPolicy(policyName?: string, policyDigest?: string): PolicyAssessment {
+  const baselineDigest = baselinePolicyDigest();
+  if (policyDigest === baselineDigest && policyName === BASELINE_POLICY_NAME) {
+    return { status: "baseline", policyName, policyDigest };
+  }
+  if (policyName === BASELINE_POLICY_NAME) {
+    return {
+      status: "reject",
+      policyName,
+      policyDigest,
+      reason: `policy name "${BASELINE_POLICY_NAME}" is reserved; digest is not the baseline`,
+    };
+  }
+  if (policyDigest === baselineDigest) {
+    return {
+      status: "reject",
+      policyName,
+      policyDigest,
+      reason: `policy digest is the baseline but policy name is ${policyName ? `"${policyName}"` : "missing"}`,
+    };
+  }
+  return { status: "custom", policyName, policyDigest };
+}
+
+export function canonicalSource(uri: string): string {
+  return normalizeRepoUri(uri.trim()).replace(/\/+$/, "").toLowerCase();
+}
+
+// expected may be a full repository URL or an owner/repo (or host/owner/repo) shorthand.
+export function sourceMatches(certificateURI: string, expected: string): boolean {
+  const got = canonicalSource(certificateURI);
+  const want = canonicalSource(expected);
+  if (got === want) return true;
+  const flag = expected.trim().replace(/\.git$/, "").replace(/\/+$/, "").toLowerCase();
+  if (flag.includes("://") || flag.startsWith("git@")) return false;
+  if (got === `https://${flag}`) return true;
+  return got.replace(/^https?:\/\/[^/]+\//, "") === flag;
+}
+
+export function verificationHeadline(r: { ok: boolean; level?: string; policyStatus?: PolicyStatus; notes: string[] }): string {
+  if (r.ok && r.level) return `VERIFIED · level ${r.level}`;
+  const hard = r.notes.some((n) => n.startsWith("source mismatch:") || n.startsWith("publishers differ:"));
+  if (r.policyStatus === "custom" && !hard) return "custom policy, not baseline";
+  return "NOT VERIFIED";
+}
+
+function worstStatus(statuses: PolicyStatus[]): PolicyStatus {
+  if (statuses.includes("reject")) return "reject";
+  if (statuses.includes("custom")) return "custom";
+  return "baseline";
+}
+
+// applyVerificationGates turns a cryptographically valid level into the result
+// a caller may print. A non-baseline policy never keeps silver, gold, or banded.
+export function applyVerificationGates(input: {
+  level?: VerifyResult["level"];
+  policies: { policyName?: string; policyDigest?: string }[];
+  sources: string[];
+  expectedSource?: string;
+  notes: string[];
+}): VerificationGate {
+  const notes = [...input.notes];
+  const assessments = input.policies.map((p) => assessPolicy(p.policyName, p.policyDigest));
+  const status = assessments.length ? worstStatus(assessments.map((a) => a.status)) : undefined;
+  const first = assessments[0];
+  const uniqueSources = [...new Set(input.sources.filter((s) => s))];
+  const source = uniqueSources.length === 1 ? uniqueSources[0] : undefined;
+  const digests = [...new Set(assessments.map((a) => a.policyDigest).filter((d): d is string => !!d))];
+  if (digests.length > 1) notes.push(`policy digests differ: ${digests.join(", ")}`);
+  if (uniqueSources.length > 1) notes.push(`publishers differ: ${uniqueSources.join(", ")}`);
+  if (input.expectedSource) {
+    const urls = input.sources.length ? input.sources : [""];
+    for (const uri of urls) {
+      if (!sourceMatches(uri, input.expectedSource)) {
+        notes.push(`source mismatch: certificate is for ${uri || "(none)"}, --source is ${input.expectedSource}`);
+      }
+    }
+  }
+  const reject = assessments.find((a) => a.status === "reject");
+  if (reject?.reason) notes.push(reject.reason);
+  const hard = notes.some((n) => n.startsWith("source mismatch:") || n.startsWith("publishers differ:") || n.startsWith("policy digests differ:"));
+  const base = {
+    source,
+    policyName: first?.policyName,
+    policyDigest: first?.policyDigest,
+    policyStatus: status,
+    notes,
+  };
+  if (status === "baseline" && !hard) return { ok: true, level: input.level, ...base };
+  return { ok: false, ...base };
 }
 
 export async function verifyBundle(bundlePath: string, artifactDigest: string, policy: TrustPolicy): Promise<BundleResult> {
@@ -104,7 +236,17 @@ export async function verifyBundle(bundlePath: string, artifactDigest: string, p
   return { bundlePath, ok: true, forge: accepted.forge, signerIdentity: identity.subjectAlternativeName, statement };
 }
 
-export async function verifyArtifact(path: string, bundlePaths: string[], policy: TrustPolicy = DEFAULT_TRUST_POLICY): Promise<VerifyResult> {
+function policyOf(statement: Statement | undefined): { policyName?: string; policyDigest?: string } {
+  const policy = statement?.predicate.checks.policy;
+  return { policyName: policy?.policyName, policyDigest: policy?.policyDigest };
+}
+
+export async function verifyArtifact(
+  path: string,
+  bundlePaths: string[],
+  policy: TrustPolicy = DEFAULT_TRUST_POLICY,
+  expectedSource?: string,
+): Promise<VerifyResult> {
   const { sha256: artifactDigest } = await digestArtifact(path);
   const bundles = await Promise.all(bundlePaths.map((b) => verifyBundle(b, artifactDigest, policy)));
   const valid = bundles.filter((b) => b.ok);
@@ -123,5 +265,12 @@ export async function verifyArtifact(path: string, bundlePaths: string[], policy
       notes.push("two forges signed, but their check results differ — not Gold");
     }
   }
-  return { ok: true, level, artifactDigest, bundles, notes };
+  const gated = applyVerificationGates({
+    level,
+    policies: valid.map((b) => policyOf(b.statement)),
+    sources: valid.map((b) => b.statement?.predicate.source.uri ?? ""),
+    expectedSource,
+    notes,
+  });
+  return { artifactDigest, bundles, ...gated };
 }

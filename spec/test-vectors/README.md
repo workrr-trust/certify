@@ -12,6 +12,7 @@ produce byte-identical canonical `checks`. These vectors pin that. Both
 | `vectors.mjs` | TypeScript evaluator (shared by the test and the generator) |
 | `generate.mjs` | Regenerates `expected.json` |
 | `sigstore/` | A real public-good Sigstore bundle, a pinned `trusted_root.json`, and the expected signer identity |
+| `cases.json` `trust` | Verifier rejection cases (main-branch signer, unknown policy digest, reused baseline name, source mismatch). Asserted directly by both test suites; not generated into `expected.json` |
 
 ## Artifacts
 

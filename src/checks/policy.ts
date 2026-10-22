@@ -12,12 +12,22 @@ export type Policy = {
   requireLicense?: boolean;
 };
 
+export const BASELINE_POLICY_NAME = "workrr-baseline-v0.1";
+
 export const BASELINE_POLICY: Policy = {
-  name: "workrr-baseline-v0.1",
+  name: BASELINE_POLICY_NAME,
   maxTotalBytes: 5_000_000,
   forbiddenExtensions: [".exe", ".dll", ".so", ".dylib", ".bin", ".jar", ".class", ".pyc"],
   requiredSkillFields: ["name", "description"],
 };
+
+// The baseline name is reserved. A custom policy may not reuse it, even a one-line
+// `{"name":"workrr-baseline-v0.1"}` that drops the forbidden-extension rules.
+export function baselineNameViolation(policy: Policy): string | undefined {
+  if (policy.name !== BASELINE_POLICY_NAME) return undefined;
+  if (jsonDigest(policy) === jsonDigest(BASELINE_POLICY)) return undefined;
+  return `policy name "${BASELINE_POLICY_NAME}" is reserved for the baseline policy`;
+}
 
 export type PolicyResult = {
   result: "pass" | "fail";
@@ -54,6 +64,8 @@ export function checkPolicy(artifact: Artifact, policy: Policy = BASELINE_POLICY
   if (policy.requireLicense && !files.some((f) => /^(LICENSE|LICENCE|COPYING)(\.[a-z]+)?$/i.test(f.path))) {
     violations.push("no LICENSE file");
   }
+  const reserved = baselineNameViolation(policy);
+  if (reserved) violations.push(reserved);
   return {
     result: violations.length ? "fail" : "pass",
     policyName: policy.name,

@@ -19,15 +19,17 @@ Usage:
   workrr test    <path> [--out tests.json]
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
-  workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json] [--json]
-                        [--trusted-root trusted_root.json]
+  workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
+                        [--source <repo>] [--json] [--trusted-root trusted_root.json]
 
   test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
            in CI, use a job WITHOUT signing permission.
   certify  Runs provenance, policy and scan checks; exits 1 if any check fails.
            In GitHub Actions also writes subject-name / subject-digest outputs.
   verify   Checks the artifact digest, Sigstore signature, Rekor inclusion and
-           certifier identity. Two bundles from different forges → Gold.
+           certifier identity. Reports the policy name and digest. A policy that
+           is not the baseline does not verify at a baseline level. --source
+           fails when the certificate's publisher repo does not match.
            --trusted-root pins a Sigstore trusted root instead of fetching it via TUF.
 `
 
@@ -38,7 +40,7 @@ type args struct {
 	positions []string
 }
 
-var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true}
+var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "source": true}
 var boolOpts = map[string]bool{"run-tests": true, "json": true}
 
 // parseArgs follows node:util parseArgs in strict mode: --name value,
@@ -246,7 +248,7 @@ func run(argv []string) (int, error) {
 			}
 		}
 		tms := &certify.TrustedMaterialSource{Path: a.strings["trusted-root"]}
-		result, err := certify.VerifyArtifact(path, a.bundles, &policy, tms)
+		result, err := certify.VerifyArtifact(path, a.bundles, &policy, tms, a.strings["source"])
 		if err != nil {
 			return 0, err
 		}
@@ -261,11 +263,21 @@ func run(argv []string) (int, error) {
 					fmt.Printf("  ✗ %s — %s\n", b.BundlePath, b.Error)
 				}
 			}
-			if result.OK {
-				fmt.Printf("VERIFIED · level %s\n", result.Level)
-			} else {
-				fmt.Println("NOT VERIFIED")
+			if result.Source != "" {
+				fmt.Printf("  publisher %s\n", result.Source)
 			}
+			if result.PolicyName != "" || result.PolicyDigest != "" {
+				name := result.PolicyName
+				if name == "" {
+					name = "(unnamed)"
+				}
+				if result.PolicyDigest != "" {
+					fmt.Printf("  policy %s %s\n", name, result.PolicyDigest)
+				} else {
+					fmt.Printf("  policy %s\n", name)
+				}
+			}
+			fmt.Println(certify.VerificationHeadline(result.OK, result.Level, result.PolicyStatus, result.Notes))
 			for _, n := range result.Notes {
 				fmt.Printf("  note: %s\n", n)
 			}

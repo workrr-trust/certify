@@ -77,17 +77,20 @@ The authority is **a policy, not a server**.
     Fulcio puts `job_workflow_ref` (the *called* reusable workflow, not the caller)
     in the cert SAN, e.g.
     `https://github.com/workrr-trust/certify/.github/workflows/certify.yml@<ref>`,
-    and records the certifier's exact commit as `job_workflow_sha` in the Build
-    Signer Digest extension. The trust policy pins **both** (SAN + Build Signer
-    Digest), so the identity is the certifier at one commit even when the caller
-    uses a tag. The caller's own workflow shows up separately as Build Config URI.
+    and records `job_workflow_sha` in the Build Signer Digest extension. For an
+    annotated tag that value is the tag object, not the peeled commit. The trust
+    policy pins **both** (SAN + Build Signer Digest). The caller's own workflow shows
+    up separately as Build Config URI. The v0.1.2 built-in policy lists only
+    `certify.yml@refs/tags/v0.1.0` and `v0.1.1`, with those tag-object digests. It
+    does not accept `refs/heads/main`.
   - **GitLab:** keyless signing requires `id_tokens` in the project's own
     `.gitlab-ci.yml`, and GitLab does not support it from CI files included from
     another repository. The cert identity (SAN and Build Signer URI =
     `ci_config_ref_uri`) is therefore the **project running the pipeline**, not a
-    shared component. workrr runs a dedicated public `workrr-trust/certify-gitlab`
-    project whose top-level `.gitlab-ci.yml` is the certifier, pinned by the trust
-    policy to project + ref + commit.
+    shared component. The intended design is a dedicated public
+    `workrr-trust/certify-gitlab` project whose top-level `.gitlab-ci.yml` is the
+    certifier, pinned by the trust policy to project + ref + commit. That project
+    does not exist, and the v0.1.2 built-in policy does not list it.
 - **The certifier is public code.** Anyone can read exactly what produced a
   certificate. Changing the checks means a new commit, which is a new, visible
   identity.

@@ -87,7 +87,12 @@ export async function certify(path: string, opts: CertifyOptions = {}): Promise<
     },
     source,
     checks: { provenance, policy, scan, tests },
-    level: tests.result === "pass" ? "silver" : "banded",
+    // Silver only when every check passed. A reserved-name or other policy failure
+    // must not leave level "silver" on the statement.
+    level:
+      provenance.result === "pass" && policy.result === "pass" && scan.result === "pass" && tests.result === "pass"
+        ? "silver"
+        : "banded",
     certifier: { name: "workrr-certify", version: VERSION, runtime: detectRuntime() },
     certifiedAt: new Date().toISOString(),
   };

@@ -139,8 +139,10 @@ func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
 	p.Artifact.FileCount = len(a.Digest.Files)
 	p.Source = source
 	p.Checks = Checks{Provenance: provenance, Policy: policy, Scan: scan, Tests: tests}
+	// Silver only when every check passed. A reserved-name or other policy failure
+	// must not leave level "silver" on the statement.
 	p.Level = "banded"
-	if tests.Result == "pass" {
+	if provenance.Result == "pass" && policy.Result == "pass" && scan.Result == "pass" && tests.Result == "pass" {
 		p.Level = "silver"
 	}
 	p.Certifier.Name = "workrr-certify"
