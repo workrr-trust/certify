@@ -29,7 +29,9 @@ Usage:
   verify   Checks the artifact digest, Sigstore signature, Rekor inclusion and
            certifier identity. Reports the policy name and digest. A policy that
            is not the baseline does not verify at a baseline level. --source
-           fails when the certificate's publisher repo does not match.
+           fails when the certificate's publisher repo does not match. --json
+           prints the structured VerifyResult JSON (ok, level, artifactDigest,
+           source, policyName, policyDigest, policyStatus, bundles, notes).
            --trusted-root pins a Sigstore trusted root instead of fetching it via TUF.
 `
 

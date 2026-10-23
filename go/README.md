@@ -31,7 +31,9 @@ workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.j
 ```
 
 One addition: `verify --trusted-root trusted_root.json` pins a Sigstore trusted root
-instead of fetching the public-good root via TUF (useful offline or air-gapped).
+instead of fetching the public-good root via TUF (useful offline or air-gapped). Pass
+`--json` to print the structured `VerifyResult` JSON (`ok`, `level`, `artifactDigest`,
+`source`, `policyName`, `policyDigest`, `policyStatus`, `bundles`, `notes`).
 
 ## Verification
 

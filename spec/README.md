@@ -62,9 +62,13 @@ contract, not implementation details:
   Without `u`, they operate on UTF-16 code units. A finding's line is 1 + the number of
   `\n` before the match start; each rule reports at most one finding per line.
 - **Findings order:** file (UTF-8 byte order), then line, then rule id.
-- **SKILL.md frontmatter** is the YAML between a leading `---` line and the next
-  `---` line, parsed with the YAML 1.2 core schema (no merge keys; duplicate keys are
-  a parse error). A frontmatter field counts only if it is a non-blank string.
+- **SKILL.md frontmatter** is the YAML between a leading `---` line (an optional leading
+  UTF-8 BOM U+FEFF is ignored) and the next `---` line, parsed with the YAML 1.2 core
+  schema (no merge keys; duplicate keys are a parse error). A frontmatter field counts
+  only if it is a non-blank string.
+- **Symlinks** inside an artifact directory must resolve within the artifact root; any
+  symlink whose target escapes the artifact directory fails the policy check and is not
+  read by the scanner.
 
 Cross-implementation test vectors live in [test-vectors/](test-vectors/README.md); every
 implementation must pass them.

@@ -119,6 +119,9 @@ func CheckPolicy(a *Artifact, p *Policy) PolicyResult {
 			violations = append(violations, "forbidden file type: "+f.Path)
 		}
 	}
+	for _, sym := range a.EscapingSymlinks {
+		violations = append(violations, "symlink points outside artifact directory: "+sym)
+	}
 	if a.Type == TypeSkill {
 		fm := a.Frontmatter
 		if fm == nil {

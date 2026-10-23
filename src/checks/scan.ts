@@ -38,7 +38,9 @@ export type ScanResult = { result: "pass" | "fail"; rulesetVersion: string; rule
 
 export async function scanArtifact(artifact: Artifact): Promise<ScanResult> {
   const findings: Finding[] = [];
+  const escaping = new Set(artifact.escapingSymlinks ?? []);
   for (const f of artifact.digest.files) {
+    if (escaping.has(f.path)) continue;
     const abs = artifact.isDirectory ? join(artifact.root, f.path) : artifact.root;
     const bytes = await readFile(abs).catch(() => undefined);
     if (!bytes || bytes.includes(0)) continue; // symlink or binary

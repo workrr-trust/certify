@@ -118,6 +118,9 @@ var matchers = func() map[string]matcher {
 func ScanArtifact(a *Artifact) ScanResult {
 	findings := []Finding{}
 	for _, f := range a.Digest.Files {
+		if slices.Contains(a.EscapingSymlinks, f.Path) {
+			continue
+		}
 		p := a.Root
 		if a.IsDirectory {
 			p = f.abs
