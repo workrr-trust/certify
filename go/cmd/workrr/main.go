@@ -21,6 +21,8 @@ Usage:
                         [--statement-out statement.json] [--predicate-out predicate.json]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
                         [--source <repo>] [--json] [--trusted-root trusted_root.json]
+  workrr gate    <repo-dir> [--min-level banded|silver|gold] [--policy policy.json]
+                            [--certificates-dir <dir>] [--source <repo>] [--json]
 
   test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
            in CI, use a job WITHOUT signing permission.
@@ -31,6 +33,8 @@ Usage:
            is not the baseline does not verify at a baseline level. --source
            fails when the certificate's publisher repo does not match.
            --trusted-root pins a Sigstore trusted root instead of fetching it via TUF.
+  gate     Org policy gate: discovers all skills in <repo-dir> and exits 1 if
+           any skill is uncertified, fails policy/scan, or is below --min-level.
 `
 
 type args struct {
@@ -40,7 +44,7 @@ type args struct {
 	positions []string
 }
 
-var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "source": true}
+var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "min-level": true, "certificates-dir": true, "source": true}
 var boolOpts = map[string]bool{"run-tests": true, "json": true}
 
 // parseArgs follows node:util parseArgs in strict mode: --name value,
@@ -283,6 +287,71 @@ func run(argv []string) (int, error) {
 			}
 		}
 		if result.OK {
+			return 0, nil
+		}
+		return 1, nil
+
+	case "gate":
+		minLevel := a.strings["min-level"]
+		if minLevel == "" {
+			minLevel = "silver"
+		}
+		if minLevel != "banded" && minLevel != "silver" && minLevel != "gold" {
+			return 0, fmt.Errorf("--min-level must be banded, silver, or gold")
+		}
+		reqPolicy := certify.BaselinePolicy()
+		if p := a.strings["policy"]; p != "" {
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return 0, err
+			}
+			if reqPolicy, err = certify.ParsePolicy(b); err != nil {
+				return 0, err
+			}
+		}
+		trustPolicy := certify.DefaultTrustPolicy
+		if p := a.strings["trust-policy"]; p != "" {
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return 0, err
+			}
+			if err := json.Unmarshal(b, &trustPolicy); err != nil {
+				return 0, err
+			}
+		}
+		var allowed []string
+		if s := a.strings["source"]; s != "" {
+			allowed = []string{s}
+		}
+		res, err := certify.RunOrgPolicyGate(path, certify.OrgGateOptions{
+			MinLevel:        minLevel,
+			RequiredPolicy:  reqPolicy,
+			CertificatesDir: a.strings["certificates-dir"],
+			AllowedSources:  allowed,
+			TrustPolicy:     &trustPolicy,
+			TrustedMaterial: &certify.TrustedMaterialSource{Path: a.strings["trusted-root"]},
+		})
+		if err != nil {
+			return 0, err
+		}
+		if a.bools["json"] {
+			os.Stdout.Write(prettyJSON(res))
+		} else {
+			fmt.Printf("org gate: %d/%d skill(s) pass (required: %s, policy: %s)\n", res.PassedSkills, res.TotalSkills, res.MinLevel, res.RequiredPolicyName)
+			for _, s := range res.Skills {
+				if s.OK {
+					fmt.Printf("  ✓ %s (%s) — level %s\n", s.Path, s.Name, s.Level)
+				} else {
+					fmt.Printf("  ✗ %s (%s) — %s\n", s.Path, s.Name, strings.Join(s.Reasons, "; "))
+				}
+			}
+			if res.OK {
+				fmt.Println("ORG GATE PASSED")
+			} else {
+				fmt.Println("ORG GATE FAILED")
+			}
+		}
+		if res.OK {
 			return 0, nil
 		}
 		return 1, nil

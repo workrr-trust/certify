@@ -314,3 +314,78 @@ func TestVerifySigstorePublicGoodBundle(t *testing.T) {
 		t.Fatalf("got %+v", r.Error)
 	}
 }
+
+func TestOrgPolicyGateBlocksUncertifiedSkills(t *testing.T) {
+	repo := t.TempDir()
+	skillA := filepath.Join(repo, "skills", "alpha")
+	skillB := filepath.Join(repo, "skills", "beta")
+	os.MkdirAll(skillA, 0o755)
+	os.MkdirAll(skillB, 0o755)
+	os.WriteFile(filepath.Join(skillA, "SKILL.md"), []byte("---\nname: alpha\ndescription: Skill A.\n---\n# Alpha\n"), 0o644)
+	os.WriteFile(filepath.Join(skillB, "SKILL.md"), []byte("---\nname: beta\ndescription: Skill B.\n---\n# Beta\n"), 0o644)
+	os.WriteFile(filepath.Join(skillA, "certificate.sigstore.json"), []byte("{}"), 0o644)
+
+	baseDigest := BaselinePolicy().Digest()
+	mockVerify := func(levelForBeta string) func(string, string, *TrustPolicy) BundleResult {
+		return func(bp, digest string, _ *TrustPolicy) BundleResult {
+			lvl := "silver"
+			if strings.Contains(bp, "beta") {
+				lvl = levelForBeta
+			}
+			return BundleResult{
+				BundlePath: bp,
+				OK:         true,
+				Forge:      ForgeGitHub,
+				Statement: map[string]any{
+					"predicate": map[string]any{
+						"level": lvl,
+						"source": map[string]any{
+							"uri": "https://github.com/workrr-trust/sample-skills",
+						},
+						"checks": map[string]any{
+							"policy": map[string]any{
+								"policyName":   BaselinePolicyName,
+								"policyDigest": baseDigest,
+							},
+						},
+					},
+				},
+			}
+		}
+	}
+
+	blocked, err := RunOrgPolicyGate(repo, OrgGateOptions{
+		MinLevel:       "silver",
+		VerifyBundleFn: mockVerify("silver"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.OK || blocked.PassedSkills != 1 || blocked.FailedSkills != 1 {
+		t.Fatalf("expected gate blocked on uncertified beta, got %+v", blocked)
+	}
+
+	os.WriteFile(filepath.Join(skillB, "certificate.sigstore.json"), []byte("{}"), 0o644)
+	below, err := RunOrgPolicyGate(repo, OrgGateOptions{
+		MinLevel:       "silver",
+		VerifyBundleFn: mockVerify("banded"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if below.OK {
+		t.Fatalf("expected gate blocked when beta is banded < silver, got %+v", below)
+	}
+
+	passed, err := RunOrgPolicyGate(repo, OrgGateOptions{
+		MinLevel:       "silver",
+		AllowedSources: []string{"workrr-trust/sample-skills"},
+		VerifyBundleFn: mockVerify("silver"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !passed.OK || passed.PassedSkills != 2 || passed.FailedSkills != 0 {
+		t.Fatalf("expected gate pass, got %+v", passed)
+	}
+}

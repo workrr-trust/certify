@@ -7,6 +7,7 @@ import { certify } from "./certify.js";
 import { BASELINE_POLICY, type Policy } from "./checks/policy.js";
 import { runTests, type TestsReport } from "./checks/tests.js";
 import { digestArtifact } from "./digest.js";
+import { runOrgPolicyGate, type GateLevel } from "./gate.js";
 import { DEFAULT_TRUST_POLICY, type TrustPolicy } from "./trust-policy.js";
 import { verificationHeadline, verifyArtifact } from "./verify.js";
 import { VERSION } from "./version.js";
@@ -20,6 +21,8 @@ Usage:
                         [--statement-out statement.json] [--predicate-out predicate.json]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
                         [--source <repo>] [--json]
+  workrr gate    <repo-dir> [--min-level banded|silver|gold] [--policy policy.json]
+                            [--certificates-dir <dir>] [--source <repo>] [--json]
 
   test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
            in CI, use a job WITHOUT signing permission.
@@ -29,6 +32,8 @@ Usage:
            certifier identity. Reports the policy name and digest. A policy that
            is not the baseline does not verify at a baseline level. --source
            fails when the certificate's publisher repo does not match.
+  gate     Org policy gate: discovers all skills in <repo-dir> and exits 1 if
+           any skill is uncertified, fails policy/scan, or is below --min-level.
 `;
 
 async function readJson<T>(path: string): Promise<T> {
@@ -57,6 +62,8 @@ async function main(argv: string[]): Promise<number> {
       "predicate-out": { type: "string" },
       bundle: { type: "string", multiple: true },
       "trust-policy": { type: "string" },
+      "min-level": { type: "string" },
+      "certificates-dir": { type: "string" },
       source: { type: "string" },
       json: { type: "boolean" },
     },
@@ -129,6 +136,37 @@ async function main(argv: string[]): Promise<number> {
         }
         process.stdout.write(`${verificationHeadline(result)}\n`);
         for (const n of result.notes) process.stdout.write(`  note: ${n}\n`);
+      }
+      return result.ok ? 0 : 1;
+    }
+    case "gate": {
+      const minLevel = (values["min-level"] as GateLevel | undefined) ?? "silver";
+      if (!["banded", "silver", "gold"].includes(minLevel)) {
+        throw new Error("--min-level must be banded, silver, or gold");
+      }
+      const requiredPolicy = values.policy ? await readJson<Policy>(values.policy) : BASELINE_POLICY;
+      const trustPolicy = values["trust-policy"] ? await readJson<TrustPolicy>(values["trust-policy"]) : DEFAULT_TRUST_POLICY;
+      const result = await runOrgPolicyGate(path, {
+        minLevel,
+        requiredPolicy,
+        certificatesDir: values["certificates-dir"],
+        allowedSources: values.source ? [values.source] : undefined,
+        trustPolicy,
+      });
+      if (values.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      } else {
+        process.stdout.write(
+          `org gate: ${result.passedSkills}/${result.totalSkills} skill(s) pass (required: ${result.minLevel}, policy: ${result.requiredPolicyName})\n`,
+        );
+        for (const s of result.skills) {
+          if (s.ok) {
+            process.stdout.write(`  ✓ ${s.path} (${s.name}) — level ${s.level}\n`);
+          } else {
+            process.stdout.write(`  ✗ ${s.path} (${s.name}) — ${s.reasons.join("; ")}\n`);
+          }
+        }
+        process.stdout.write(result.ok ? "ORG GATE PASSED\n" : "ORG GATE FAILED\n");
       }
       return result.ok ? 0 : 1;
     }
