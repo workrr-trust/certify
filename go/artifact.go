@@ -33,6 +33,7 @@ type Artifact struct {
 	Digest      *ArtifactDigest
 	// Frontmatter is nil when SKILL.md has no parseable YAML mapping.
 	Frontmatter      map[string]any
+	SkillBody        string
 	EscapingSymlinks []string
 }
 
@@ -96,7 +97,9 @@ func LoadArtifact(root string) (*Artifact, error) {
 		if err != nil {
 			return nil, err
 		}
-		a.Frontmatter = ParseFrontmatter(DecodeUTF8(b))
+		text := DecodeUTF8(b)
+		a.SkillBody = StripFrontmatter(text)
+		a.Frontmatter = ParseFrontmatter(text)
 		if n, ok := a.Frontmatter["name"].(string); ok && n != "" {
 			a.Name = n
 		}
@@ -123,6 +126,14 @@ func LoadArtifact(root string) (*Artifact, error) {
 
 // Same expression as the TypeScript reference; RE2 handles it unchanged.
 var frontmatterRe = regexp.MustCompile("^\uFEFF?---\\r?\\n([\\s\\S]*?)\\r?\\n---(?:\\r?\\n)?")
+
+func StripFrontmatter(text string) string {
+	loc := frontmatterRe.FindStringIndex(text)
+	if loc == nil {
+		return text
+	}
+	return text[loc[1]:]
+}
 
 // ParseFrontmatter returns the YAML mapping between the leading `---` fences.
 // A YAML sequence counts as parseable but has no fields (JavaScript arrays are

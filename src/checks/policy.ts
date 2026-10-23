@@ -81,8 +81,12 @@ export function checkPolicy(artifact: Artifact, policy: Policy = BASELINE_POLICY
 }
 
 // `allowed-tools` may be a YAML list or a comma/space-separated string.
-function listTools(v: unknown): string[] {
+export function listTools(v: unknown): string[] {
   if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
   if (typeof v === "string") return v.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
   return [];
+}
+
+export function hasLicenseFile(files: { path: string }[]): boolean {
+  return files.some((f) => /^(LICENSE|LICENCE|COPYING)(\.[a-z]+)?$/i.test(f.path));
 }

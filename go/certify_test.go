@@ -165,6 +165,38 @@ func TestJSToLower(t *testing.T) {
 	}
 }
 
+func TestComputeTrustBand(t *testing.T) {
+	dirA := t.TempDir()
+	os.WriteFile(filepath.Join(dirA, "SKILL.md"), []byte("---\nname: banded-skill\ndescription: Summarize notes. Use when reviewing notes.\nallowed-tools: Read\nlicense: Apache-2.0\n---\n# Banded Skill\n1. Read notes.\n"), 0o644)
+	aA, err := LoadArtifact(dirA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanA := ScanArtifact(aA)
+	if got := ComputeTrustBand(aA, BaselinePolicy(), scanA, ""); got != "A" {
+		t.Fatalf("got %s, want A", got)
+	}
+	if got := ComputeTrustBand(aA, BaselinePolicy(), scanA, "C"); got != "C" {
+		t.Fatalf("got %s, want C", got)
+	}
+
+	dirE := t.TempDir()
+	os.WriteFile(filepath.Join(dirE, "SKILL.md"), []byte("---\nname: min-skill\ndescription: Minimal description.\n---\nPlain text with zero\u200bwidth warning.\n"), 0o644)
+	aE, err := LoadArtifact(dirE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanE := ScanArtifact(aE)
+	if got := ComputeTrustBand(aE, BaselinePolicy(), scanE, ""); got != "E" {
+		t.Fatalf("got %s, want E", got)
+	}
+
+	gate := ApplyVerificationGates("banded", [][2]string{{BaselinePolicyName, BaselinePolicy().Digest()}}, []string{"https://github.com/workrr-trust/sample-skills"}, "", nil, "B")
+	if !gate.OK || gate.Band != "B" || VerificationHeadline(gate.OK, gate.Level, gate.PolicyStatus, gate.Notes, gate.Band) != "VERIFIED · level banded · band B" {
+		t.Fatalf("unexpected banded gate: %+v", gate)
+	}
+}
+
 func TestNormalizeRepoURI(t *testing.T) {
 	for in, want := range map[string]string{
 		"git@github.com:workrr-trust/certify.git": "https://github.com/workrr-trust/certify",

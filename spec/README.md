@@ -78,9 +78,17 @@ implementation must pass them.
 | Level | Rule |
 |---|---|
 | `silver` | provenance, policy, scan, and tests all `pass` |
-| `banded` | provenance, policy, scan `pass`; tests `none` (not deterministically testable). A trust band is attached only when evidence exists. |
+| `banded` | provenance, policy, scan `pass`; tests `none` (not deterministically testable). Receives a deterministic `A`–`E` trust band (`predicate.band`). |
 | *(no certificate)* | any check `fail` — the certifier exits non-zero and nothing is signed |
 | `gold` | **Assigned only by verifiers, never by certifiers:** two `silver` certificates for the same digest, signed by accepted certifier identities on two different forges, with identical `checks`. |
+
+**Trust bands (`A`–`E`).** When `level` is `banded`, the certifier computes a deterministic
+`A`–`E` grade over four intrinsic signals (1 point each; 4 → `A`, 3 → `B`, 2 → `C`,
+1 → `D`, 0 → `E`), unless overridden by external outcome evidence:
+1. **Zero scan warnings:** `scan.findings` has no `warn`-severity findings.
+2. **Scoped tools:** `SKILL.md` declares `allowed-tools` or the policy pins `allowedTools`.
+3. **Structured instructions:** for a `skill`, `description` states when to trigger (`use when`) and the body has a Markdown heading or numbered step (`1. `); for other types, a top-level `README` or `README.md` is present.
+4. **Declared license:** a top-level `LICENSE`/`LICENCE`/`COPYING` file or a non-blank `license` frontmatter field is present.
 
 ## 5. Signing and logging
 

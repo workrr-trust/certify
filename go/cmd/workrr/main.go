@@ -197,6 +197,9 @@ func run(argv []string) (int, error) {
 			commit = commit[:12]
 		}
 		last := "level      " + p.Level
+		if p.Band != "" {
+			last += " (band " + p.Band + ")"
+		}
 		if !outcome.Certified {
 			last = "NOT CERTIFIED:\n  - " + strings.Join(outcome.Failures, "\n  - ")
 		}
@@ -231,8 +234,8 @@ func run(argv []string) (int, error) {
 			if err != nil {
 				return 0, err
 			}
-			_, err = fmt.Fprintf(f, "certified=%t\nsubject-name=%s\nsubject-digest=sha256:%s\nlevel=%s\n",
-				outcome.Certified, st.Subject[0].Name, st.Subject[0].Digest["sha256"], p.Level)
+			_, err = fmt.Fprintf(f, "certified=%t\nsubject-name=%s\nsubject-digest=sha256:%s\nlevel=%s\nband=%s\n",
+				outcome.Certified, st.Subject[0].Name, st.Subject[0].Digest["sha256"], p.Level, p.Band)
 			f.Close()
 			if err != nil {
 				return 0, err
@@ -326,10 +329,13 @@ func run(argv []string) (int, error) {
 					fmt.Printf("  policy %s\n", name)
 				}
 			}
+			if result.Band != "" {
+				fmt.Printf("  band %s\n", result.Band)
+			}
 			if result.Status == "REVOKED" {
 				fmt.Println("REVOKED")
 			} else {
-				fmt.Println(certify.VerificationHeadline(result.OK, result.Level, result.PolicyStatus, result.Notes))
+				fmt.Println(certify.VerificationHeadline(result.OK, result.Level, result.PolicyStatus, result.Notes, result.Band))
 			}
 			for _, n := range result.Notes {
 				fmt.Printf("  note: %s\n", n)

@@ -38,6 +38,7 @@ type VerifyResult struct {
 	OK             bool           `json:"ok"`
 	Status         string         `json:"status,omitempty"`
 	Level          string         `json:"level,omitempty"`
+	Band           string         `json:"band,omitempty"`
 	ArtifactDigest string         `json:"artifactDigest"`
 	Source         string         `json:"source,omitempty"`
 	PolicyName     string         `json:"policyName,omitempty"`
@@ -52,6 +53,7 @@ type VerifyResult struct {
 type VerificationGate struct {
 	OK           bool
 	Level        string
+	Band         string
 	Source       string
 	PolicyName   string
 	PolicyDigest string
@@ -153,8 +155,11 @@ func worstStatus(statuses []string) string {
 
 // VerificationHeadline is the result line verify prints. It never includes a
 // baseline level unless the gate accepted the policy.
-func VerificationHeadline(ok bool, level, policyStatus string, notes []string) string {
+func VerificationHeadline(ok bool, level, policyStatus string, notes []string, band ...string) string {
 	if ok && level != "" {
+		if level == "banded" && len(band) > 0 && band[0] != "" {
+			return "VERIFIED · level " + level + " · band " + band[0]
+		}
 		return "VERIFIED · level " + level
 	}
 	hard := false
@@ -185,7 +190,7 @@ func uniqueNonEmpty(in []string) []string {
 
 // ApplyVerificationGates turns a cryptographically valid level into the result
 // a caller may print. A non-baseline policy never keeps silver, gold, or banded.
-func ApplyVerificationGates(level string, policies [][2]string, sources []string, expectedSource string, notes []string) VerificationGate {
+func ApplyVerificationGates(level string, policies [][2]string, sources []string, expectedSource string, notes []string, band ...string) VerificationGate {
 	outNotes := append([]string{}, notes...)
 	var statuses []string
 	var assessments [][3]string // status, name, digest; reason stored separately
@@ -256,6 +261,9 @@ func ApplyVerificationGates(level string, policies [][2]string, sources []string
 	if status == "baseline" && !hard {
 		gate.OK = true
 		gate.Level = level
+		if level == "banded" && len(band) > 0 && band[0] != "" {
+			gate.Band = band[0]
+		}
 	}
 	return gate
 }
@@ -511,13 +519,20 @@ func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms 
 	}
 	policies := make([][2]string, len(valid))
 	sources := make([]string, len(valid))
+	band := ""
 	for i, b := range valid {
 		policies[i][0], policies[i][1] = predicatePolicy(b.Statement)
 		sources[i] = predicateSource(b.Statement)
+		if res.Level == "banded" && band == "" {
+			if bv, ok := predicateField(b.Statement, "band").(string); ok {
+				band = bv
+			}
+		}
 	}
-	gate := ApplyVerificationGates(res.Level, policies, sources, expectedSource, res.Notes)
+	gate := ApplyVerificationGates(res.Level, policies, sources, expectedSource, res.Notes, band)
 	res.OK = gate.OK
 	res.Level = gate.Level
+	res.Band = gate.Band
 	res.Source = gate.Source
 	res.PolicyName = gate.PolicyName
 	res.PolicyDigest = gate.PolicyDigest

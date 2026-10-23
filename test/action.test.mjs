@@ -23,6 +23,7 @@ const THIRD_PARTY = new Set([
   "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
   "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
   "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
+  "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6",
 ]);
 
 const TRUSTED_CERTIFIER = /^workrr-trust\/certify\/\.github\/workflows\/certify\.yml@v0\.1\.[01]$/;

@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { loadArtifact } from "../dist/artifact.js";
-import { certify } from "../dist/certify.js";
+import { certify, computeTrustBand } from "../dist/certify.js";
 import { checkPolicy, BASELINE_POLICY } from "../dist/checks/policy.js";
 import { scanArtifact, scanText } from "../dist/checks/scan.js";
 import { runTests } from "../dist/checks/tests.js";
@@ -178,6 +178,27 @@ test("reserved baseline name cannot certify payload.exe as silver", async () => 
 test("normalizes git remotes", () => {
   assert.equal(normalizeRepoUri("git@github.com:workrr-trust/certify.git"), "https://github.com/workrr-trust/certify");
   assert.equal(normalizeRepoUri("https://token@github.com/a/b.git"), "https://github.com/a/b");
+});
+
+test("computes deterministic A-E trust bands for banded artifacts", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "workrr-band-"));
+  await writeFile(
+    join(dir, "SKILL.md"),
+    "---\nname: banded-skill\ndescription: Summarize notes. Use when reviewing notes.\nallowed-tools: Read\nlicense: Apache-2.0\n---\n# Banded Skill\n1. Read notes.\n",
+  );
+  const a = await loadArtifact(dir);
+  const scan = await scanArtifact(a);
+  assert.equal(computeTrustBand(a, BASELINE_POLICY, scan), "A");
+  assert.equal(computeTrustBand(a, BASELINE_POLICY, scan, "C"), "C");
+
+  const dirE = await mkdtemp(join(tmpdir(), "workrr-band-e-"));
+  await writeFile(
+    join(dirE, "SKILL.md"),
+    "---\nname: min-skill\ndescription: Minimal description.\n---\nPlain text with zero\u200bwidth warning.\n",
+  );
+  const aE = await loadArtifact(dirE);
+  const scanE = await scanArtifact(aE);
+  assert.equal(computeTrustBand(aE, BASELINE_POLICY, scanE), "E");
 });
 
 test("leading BOM before SKILL.md frontmatter passes policy check", async () => {
