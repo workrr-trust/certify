@@ -4,6 +4,7 @@ Cloudflare Worker that stores signed trust-policy and revocation blobs in R2
 and indexes them in D1. It is transport. Clients verify the signatures.
 
 Setup, the SQL Shawn runs, and the deploy checklist: [docs/trust-api.md](../../docs/trust-api.md).
+The executable production procedure is [docs/deploy/trust-api-runbook.md](../../docs/deploy/trust-api-runbook.md).
 
 ```bash
 npm ci

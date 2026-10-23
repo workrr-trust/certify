@@ -6,7 +6,8 @@ key and it does not check signatures. Verification happens in the TypeScript
 and Go clients.
 
 Nothing in this repository creates the Cloudflare resources or deploys the
-worker. The ids in `wrangler.jsonc` are placeholders.
+worker. The ids in `wrangler.jsonc` are placeholders. The executable procedure
+is [docs/deploy/trust-api-runbook.md](deploy/trust-api-runbook.md).
 
 ## Endpoints
 
