@@ -475,6 +475,77 @@ func TestVerifySigstorePublicGoodBundle(t *testing.T) {
 	}
 }
 
+func TestPrivateModeTSAAndAnchorReceipt(t *testing.T) {
+	dir := t.TempDir()
+	artifactDigest := strings.Repeat("a", 64)
+	stmt := `{"_type":"https://in-toto.io/Statement/v1","subject":[{"name":"internal","digest":{"sha256":"` + artifactDigest + `"}}],"predicateType":"https://trust.workrr.ai/certificate/v0.1","predicate":{}}`
+	bundleJSON := `{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json","verificationMaterial":{"tlogEntries":[],"timestampVerificationData":{"rfc3161Timestamps":[{"signedTimestamp":"MIIB"}]}},"dsseEnvelope":{"payloadType":"application/vnd.in-toto+json","payload":"` + encodeBase64(stmt) + `","signatures":[{"sig":"AA=="}]}}`
+	bp := filepath.Join(dir, "private.sigstore.json")
+	if err := os.WriteFile(bp, []byte(bundleJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pub := VerifyBundle(bp, artifactDigest, &DefaultTrustPolicy, &TrustedMaterialSource{})
+	if pub.OK || !strings.Contains(pub.Error, "pass --private to verify") || pub.PrivateSigning == nil || !*pub.PrivateSigning {
+		t.Fatalf("expected private TSA rejection in public mode, got %+v", pub)
+	}
+
+	generic, err := DecodeJSON([]byte(bundleJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hashes, err := ComputeAnchorHashes([]byte(bundleJSON), generic.(map[string]any)["dsseEnvelope"], artifactDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := AnchorReceipt{
+		Sequence:          1,
+		EnvelopeHash:      hashes.EnvelopeHash,
+		BundleHash:        hashes.BundleHash,
+		SubjectDigestHash: hashes.SubjectDigestHash,
+		AnchoredAt:        "2026-10-22T00:00:00Z",
+		PrevChainHash:     strings.Repeat("0", 64),
+	}
+	receipt.ChainHash = ComputeAnchorChainHash(receipt)
+	if errMsg := VerifyAnchorReceipt(receipt, hashes); errMsg != "" {
+		t.Fatalf("expected valid receipt, got %s", errMsg)
+	}
+	tampered := receipt
+	tampered.ChainHash = strings.Repeat("b", 64)
+	if errMsg := VerifyAnchorReceipt(tampered, hashes); !strings.Contains(errMsg, "chainHash invalid") {
+		t.Fatalf("expected chainHash error, got %s", errMsg)
+	}
+}
+
+func encodeBase64(s string) string {
+	const table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	b := []byte(s)
+	var out strings.Builder
+	for i := 0; i < len(b); i += 3 {
+		v := int(b[i]) << 16
+		rem := len(b) - i
+		if rem > 1 {
+			v |= int(b[i+1]) << 8
+		}
+		if rem > 2 {
+			v |= int(b[i+2])
+		}
+		out.WriteByte(table[(v>>18)&0x3f])
+		out.WriteByte(table[(v>>12)&0x3f])
+		if rem > 1 {
+			out.WriteByte(table[(v>>6)&0x3f])
+		} else {
+			out.WriteByte('=')
+		}
+		if rem > 2 {
+			out.WriteByte(table[v&0x3f])
+		} else {
+			out.WriteByte('=')
+		}
+	}
+	return out.String()
+}
+
 func TestGoldRequiresTwoForgesSameCommitAndChecks(t *testing.T) {
 	baseDigest := BaselinePolicy().Digest()
 	makeBundle := func(forge Forge, commit, cmd string) BundleResult {

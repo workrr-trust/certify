@@ -5,13 +5,26 @@ import { verify as sigstoreVerify } from "sigstore";
 import { PREDICATE_TYPE, type Statement, type TrustBand } from "./certify.js";
 import { BASELINE_POLICY, BASELINE_POLICY_NAME } from "./checks/policy.js";
 import { normalizeRepoUri } from "./checks/provenance.js";
-import { canonicalJson, digestArtifact, jsonDigest } from "./digest.js";
+import { canonicalJson, digestArtifact, jsonDigest, sha256Hex } from "./digest.js";
 import { baselineRejected, OFFLINE_WARNING, revocationError, type RevocationEntry } from "./trust-feed.js";
 import { DEFAULT_TRUST_POLICY, type AcceptedSigner, type Forge, type TrustPolicy } from "./trust-policy.js";
 
 const OID_BUILD_SIGNER_DIGEST = "1.3.6.1.4.1.57264.1.10";
 const OID_SOURCE_REPOSITORY_URI = "1.3.6.1.4.1.57264.1.12";
 const OID_SOURCE_REPOSITORY_DIGEST = "1.3.6.1.4.1.57264.1.13";
+
+export type AnchorHashes = {
+  envelopeHash: string;
+  bundleHash: string;
+  subjectDigestHash: string;
+};
+
+export type AnchorReceipt = AnchorHashes & {
+  sequence: number;
+  anchoredAt: string;
+  prevChainHash: string;
+  chainHash: string;
+};
 
 export type BundleResult = {
   bundlePath: string;
@@ -20,6 +33,8 @@ export type BundleResult = {
   forge?: Forge;
   signerIdentity?: string;
   statement?: Statement;
+  privateSigning?: boolean;
+  anchorHashes?: AnchorHashes;
   /** Rekor log indexes carried in the bundle. Revocation entries name one of these. */
   logIndexes?: string[];
 };
@@ -37,6 +52,8 @@ export type VerifyResult = {
   policyName?: string;
   policyDigest?: string;
   policyStatus?: PolicyStatus;
+  privateMode?: boolean;
+  anchor?: AnchorReceipt;
   bundles: BundleResult[];
   notes: string[];
 };
@@ -60,6 +77,9 @@ export type VerifyOptions = {
   baselinePolicyDigests?: Record<string, string>;
   /** Publisher repository. A mismatch fails closed and is not a baseline result. */
   expectedSource?: string;
+  privateMode?: boolean;
+  trustedRootPath?: string;
+  anchorReceipt?: AnchorReceipt;
 };
 
 type SerializedBundle = Parameters<typeof sigstoreVerify>[0];
@@ -311,6 +331,44 @@ export function applyVerificationGates(input: {
   return { ok: false, ...base };
 }
 
+export function computeAnchorHashes(rawBundle: string | Buffer, dsseEnvelope: unknown, artifactDigest: string): AnchorHashes {
+  return {
+    envelopeHash: sha256Hex(canonicalJson(dsseEnvelope)),
+    bundleHash: sha256Hex(rawBundle),
+    subjectDigestHash: sha256Hex(artifactDigest.toLowerCase()),
+  };
+}
+
+export function computeAnchorChainHash(input: {
+  sequence: number;
+  envelopeHash: string;
+  bundleHash: string;
+  subjectDigestHash: string;
+  anchoredAt: string;
+  prevChainHash: string;
+}): string {
+  return sha256Hex(
+    `${input.sequence}:${input.envelopeHash}:${input.bundleHash}:${input.subjectDigestHash}:${input.anchoredAt}:${input.prevChainHash}`,
+  );
+}
+
+export function verifyAnchorReceipt(receipt: AnchorReceipt, expected: AnchorHashes): string | undefined {
+  if (receipt.envelopeHash !== expected.envelopeHash) {
+    return `anchor receipt envelopeHash mismatch: receipt has ${receipt.envelopeHash}, bundle is ${expected.envelopeHash}`;
+  }
+  if (receipt.bundleHash !== expected.bundleHash) {
+    return `anchor receipt bundleHash mismatch: receipt has ${receipt.bundleHash}, bundle is ${expected.bundleHash}`;
+  }
+  if (receipt.subjectDigestHash !== expected.subjectDigestHash) {
+    return `anchor receipt subjectDigestHash mismatch: receipt has ${receipt.subjectDigestHash}, artifact is ${expected.subjectDigestHash}`;
+  }
+  const wantChain = computeAnchorChainHash(receipt);
+  if (receipt.chainHash !== wantChain) {
+    return `anchor receipt chainHash invalid: got ${receipt.chainHash}, expected ${wantChain}`;
+  }
+  return undefined;
+}
+
 export function bundleLogIndexes(bundle: unknown): string[] {
   const entries = (bundle as { verificationMaterial?: { tlogEntries?: { logIndex?: unknown }[] } })?.verificationMaterial?.tlogEntries;
   if (!Array.isArray(entries)) return [];
@@ -322,12 +380,25 @@ export function bundleLogIndexes(bundle: unknown): string[] {
   return out;
 }
 
-export async function verifyBundle(bundlePath: string, artifactDigest: string, policy: TrustPolicy): Promise<BundleResult> {
+export async function verifyBundle(
+  bundlePath: string,
+  artifactDigest: string,
+  policy: TrustPolicy,
+  options: VerifyOptions = {},
+): Promise<BundleResult> {
   const fail = (error: string, extra: Partial<BundleResult> = {}): BundleResult => ({ bundlePath, ok: false, error, ...extra });
-  let bundle: SerializedBundle & { dsseEnvelope?: { payload: string; payloadType: string }; verificationMaterial?: unknown };
+  let rawBytes: Buffer;
+  let bundle: SerializedBundle & {
+    dsseEnvelope?: { payload: string; payloadType: string };
+    verificationMaterial?: {
+      tlogEntries?: unknown[];
+      timestampVerificationData?: { rfc3161Timestamps?: unknown[] };
+    };
+  };
   let logIndexes: string[] = [];
   try {
-    bundle = JSON.parse(await readFile(bundlePath, "utf8"));
+    rawBytes = await readFile(bundlePath);
+    bundle = JSON.parse(rawBytes.toString("utf8"));
     logIndexes = bundleLogIndexes(bundle);
   } catch (e) {
     return fail(`cannot read bundle: ${(e as Error).message}`);
@@ -348,12 +419,38 @@ export async function verifyBundle(bundlePath: string, artifactDigest: string, p
     return withLog(fail("certificate is for a different artifact (digest mismatch)", { statement }));
   }
 
+  const hasTlog = (bundle.verificationMaterial?.tlogEntries?.length ?? 0) > 0;
+  const hasRfc3161 = (bundle.verificationMaterial?.timestampVerificationData?.rfc3161Timestamps?.length ?? 0) > 0;
+  const privateSigning = !hasTlog && hasRfc3161;
+  if (privateSigning && !options.privateMode) {
+    return withLog(fail("bundle uses private-tier TSA signing without public Rekor inclusion (pass --private to verify)", {
+      statement,
+      privateSigning: true,
+    }));
+  }
+
+  const anchorHashes = computeAnchorHashes(rawBytes, bundle.dsseEnvelope, artifactDigest);
+  if (options.anchorReceipt) {
+    const anchorErr = verifyAnchorReceipt(options.anchorReceipt, anchorHashes);
+    if (anchorErr) {
+      return withLog(fail(anchorErr, { statement, privateSigning, anchorHashes }));
+    }
+  }
+
   let signer;
   try {
-    // Checks certificate chain to the Sigstore root, signature, and Rekor inclusion.
-    signer = await sigstoreVerify(bundle);
+    const verifyOpts = options.privateMode
+      ? {
+          tlogThreshold: hasTlog ? 1 : 0,
+          ctLogThreshold: hasTlog ? 1 : 0,
+          ...(options.trustedRootPath ? { tufRootPath: options.trustedRootPath } : {}),
+        }
+      : options.trustedRootPath
+        ? { tufRootPath: options.trustedRootPath }
+        : undefined;
+    signer = await sigstoreVerify(bundle, verifyOpts);
   } catch (e) {
-    return withLog(fail(`signature verification failed: ${(e as Error).message}`, { statement }));
+    return withLog(fail(`signature verification failed: ${(e as Error).message}`, { statement, privateSigning, anchorHashes }));
   }
   const identity = (signer.identity ?? {}) as Identity;
   const described = describeSigner(identity);
@@ -362,6 +459,8 @@ export async function verifyBundle(bundlePath: string, artifactDigest: string, p
     return withLog(fail(`signer is not an accepted workrr certifier: ${identity.subjectAlternativeName ?? "unknown"}`, {
       statement,
       signerIdentity: identity.subjectAlternativeName,
+      privateSigning,
+      anchorHashes,
     }));
   }
   const sourceMismatch = checkCertificateSourceAndCommit(statement, described);
@@ -370,6 +469,8 @@ export async function verifyBundle(bundlePath: string, artifactDigest: string, p
       statement,
       forge: accepted.forge,
       signerIdentity: identity.subjectAlternativeName,
+      privateSigning,
+      anchorHashes,
     }));
   }
   const derivedLevel = deriveStatementLevel(statement);
@@ -378,6 +479,8 @@ export async function verifyBundle(bundlePath: string, artifactDigest: string, p
       statement,
       forge: accepted.forge,
       signerIdentity: identity.subjectAlternativeName,
+      privateSigning,
+      anchorHashes,
     }));
   }
   if (statement.predicate.level === "silver" && derivedLevel !== "silver") {
@@ -385,9 +488,18 @@ export async function verifyBundle(bundlePath: string, artifactDigest: string, p
       statement,
       forge: accepted.forge,
       signerIdentity: identity.subjectAlternativeName,
+      privateSigning,
+      anchorHashes,
     }));
   }
-  return withLog({ bundlePath, ok: true, forge: accepted.forge, signerIdentity: identity.subjectAlternativeName, statement });
+  return withLog({
+    bundlePath,
+    ok: true,
+    forge: accepted.forge,
+    signerIdentity: identity.subjectAlternativeName,
+    statement,
+    ...(options.privateMode ? { privateSigning, anchorHashes } : {}),
+  });
 }
 
 function policyOf(statement: Statement | undefined): { policyName?: string; policyDigest?: string } {
@@ -402,7 +514,7 @@ export async function verifyArtifact(
   options: VerifyOptions = {},
 ): Promise<VerifyResult> {
   const { sha256: artifactDigest } = await digestArtifact(path);
-  const bundles = await Promise.all(bundlePaths.map((b) => verifyBundle(b, artifactDigest, policy)));
+  const bundles = await Promise.all(bundlePaths.map((b) => verifyBundle(b, artifactDigest, policy, options)));
   const checkRevocation = options.revocations !== undefined && !options.offline;
   for (const bundle of bundles) {
     if (!bundle.ok) continue;
@@ -424,14 +536,35 @@ export async function verifyArtifact(
     : checkRevocation
       ? []
       : ["revocation is not checked in v0.1 (revocation ledger ships in v0.2)"];
+  if (options.privateMode) {
+    notes.push("verified in private mode (hash-only public anchor preserves confidentiality)");
+  }
   const valid = bundles.filter((b) => b.ok);
   const revoked = bundles.some((b) => b.error?.startsWith("REVOKED:"));
   if (valid.length === 0) {
-    return { ok: false, status: revoked ? "REVOKED" : "rejected", artifactDigest, bundles, notes };
+    return {
+      ok: false,
+      status: revoked ? "REVOKED" : "rejected",
+      artifactDigest,
+      ...(options.privateMode ? { privateMode: true } : {}),
+      ...(options.anchorReceipt ? { anchor: options.anchorReceipt } : {}),
+      bundles,
+      notes,
+    };
   }
 
   const evaluated = evaluateGoldBundles(valid, notes);
-  if (!evaluated.level) return { ok: false, status: "rejected", artifactDigest, bundles, notes: evaluated.notes };
+  if (!evaluated.level) {
+    return {
+      ok: false,
+      status: "rejected",
+      artifactDigest,
+      ...(options.privateMode ? { privateMode: true } : {}),
+      ...(options.anchorReceipt ? { anchor: options.anchorReceipt } : {}),
+      bundles,
+      notes: evaluated.notes,
+    };
+  }
   const band = evaluated.level === "banded" ? valid.find((b) => b.statement?.predicate.band)?.statement?.predicate.band : undefined;
   const gated = applyVerificationGates({
     level: evaluated.level,
@@ -441,5 +574,12 @@ export async function verifyArtifact(
     expectedSource: options.expectedSource,
     notes: evaluated.notes,
   });
-  return { artifactDigest, bundles, status: gated.ok ? "verified" : "rejected", ...gated };
+  return {
+    artifactDigest,
+    bundles,
+    status: gated.ok ? "verified" : "rejected",
+    ...(options.privateMode ? { privateMode: true } : {}),
+    ...(options.anchorReceipt ? { anchor: options.anchorReceipt } : {}),
+    ...gated,
+  };
 }

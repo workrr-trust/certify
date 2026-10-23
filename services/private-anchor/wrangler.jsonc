@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "workrr-private-anchor",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-22",
+  // Hash-only public anchor log for private-tier certificates.
+  // Stores only SHA-256 digests (never artifact names, source URLs, policies, or predicates).
+  "account_id": "REPLACE_WITH_ACCOUNT_ID",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {},
+  "routes": [
+    {
+      "pattern": "private-anchor.workrr.ai",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "workrr-private-anchor",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

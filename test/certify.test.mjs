@@ -18,10 +18,15 @@ import {
   applyVerificationGates,
   baselinePolicyDigest,
   checkCertificateSourceAndCommit,
+  computeAnchorChainHash,
+  computeAnchorHashes,
   deriveStatementLevel,
   evaluateGoldBundles,
+  verifyAnchorReceipt,
+  verifyBundle,
 } from "../dist/verify.js";
 import { signStatementWithSigstore } from "../scripts/gitlab-sign.mjs";
+import privateAnchorWorker from "../services/private-anchor/src/index.ts";
 import registryWorker from "../services/registry/src/index.ts";
 
 const exec = promisify(execFile);
@@ -186,6 +191,123 @@ test("reserved baseline name cannot certify payload.exe as silver", async () => 
 test("normalizes git remotes", () => {
   assert.equal(normalizeRepoUri("git@github.com:workrr-trust/certify.git"), "https://github.com/workrr-trust/certify");
   assert.equal(normalizeRepoUri("https://token@github.com/a/b.git"), "https://github.com/a/b");
+});
+
+test("private mode rejects TSA-only bundles without --private and verifies hash-only anchor receipts", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "workrr-priv-"));
+  const artifactDigest = "a".repeat(64);
+  const statement = {
+    _type: "https://in-toto.io/Statement/v1",
+    subject: [{ name: "internal-skill", digest: { sha256: artifactDigest } }],
+    predicateType: "https://trust.workrr.ai/certificate/v0.1",
+    predicate: {},
+  };
+  const bundleObj = {
+    mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
+    verificationMaterial: {
+      tlogEntries: [],
+      timestampVerificationData: { rfc3161Timestamps: [{ signedTimestamp: "MIIB" }] },
+    },
+    dsseEnvelope: {
+      payloadType: "application/vnd.in-toto+json",
+      payload: Buffer.from(JSON.stringify(statement)).toString("base64"),
+      signatures: [{ sig: "AA==" }],
+    },
+  };
+  const bundlePath = join(dir, "private.sigstore.json");
+  const rawBundle = JSON.stringify(bundleObj, null, 2);
+  await writeFile(bundlePath, rawBundle);
+
+  // Public mode rejects TSA-only private bundles before sigstore verify
+  const pubRes = await verifyBundle(bundlePath, artifactDigest, { version: "v1", signers: [] });
+  assert.equal(pubRes.ok, false);
+  assert.equal(pubRes.privateSigning, true);
+  assert.match(pubRes.error, /pass --private to verify/);
+
+  // Compute hash-only anchor hashes and test the D1 private-anchor Worker
+  const hashes = computeAnchorHashes(rawBundle, bundleObj.dsseEnvelope, artifactDigest);
+  const rows = [];
+  const env = {
+    DB: {
+      prepare(sql) {
+        let bound = [];
+        return {
+          bind(...vals) {
+            bound = vals;
+            return this;
+          },
+          async first() {
+            if (sql.includes("WHERE envelope_hash = ?") && !sql.includes("OR bundle_hash")) {
+              return rows.find((r) => r.envelope_hash === bound[0]) ?? null;
+            }
+            if (sql.includes("WHERE envelope_hash = ? OR bundle_hash = ?")) {
+              return rows.find((r) => r.envelope_hash === bound[0] || r.bundle_hash === bound[1]) ?? null;
+            }
+            if (sql.includes("ORDER BY sequence DESC LIMIT 1")) {
+              return rows.length ? rows[rows.length - 1] : null;
+            }
+            return null;
+          },
+          async run() {
+            if (sql.startsWith("INSERT INTO anchors")) {
+              rows.push({
+                sequence: bound[0],
+                envelope_hash: bound[1],
+                bundle_hash: bound[2],
+                subject_digest_hash: bound[3],
+                anchored_at: bound[4],
+                prev_chain_hash: bound[5],
+                chain_hash: bound[6],
+              });
+            }
+            return { success: true };
+          },
+          async all() {
+            return { results: rows };
+          },
+        };
+      },
+    },
+  };
+
+  // Rejects extra plaintext fields
+  const badReq = new Request("https://private-anchor.workrr.ai/v1/anchors", {
+    method: "POST",
+    body: JSON.stringify({ ...hashes, artifactName: "secret-internal-skill" }),
+  });
+  const badResp = await privateAnchorWorker.fetch(badReq, env);
+  assert.equal(badResp.status, 400);
+
+  // Accepts hash-only payload and returns hash-chained receipt
+  const postReq = new Request("https://private-anchor.workrr.ai/v1/anchors", {
+    method: "POST",
+    body: JSON.stringify(hashes),
+  });
+  const postResp = await privateAnchorWorker.fetch(postReq, env);
+  assert.equal(postResp.status, 201);
+  const receipt = await postResp.json();
+  assert.equal(receipt.sequence, 1);
+  assert.equal(receipt.prevChainHash, "0".repeat(64));
+  assert.equal(receipt.chainHash, computeAnchorChainHash(receipt));
+  assert.equal(verifyAnchorReceipt(receipt, hashes), undefined);
+
+  // Lookup by hash and head
+  const getResp = await privateAnchorWorker.fetch(
+    new Request(`https://private-anchor.workrr.ai/v1/anchors/${hashes.envelopeHash}`),
+    env,
+  );
+  assert.equal(getResp.status, 200);
+  assert.deepEqual(await getResp.json(), receipt);
+
+  const headResp = await privateAnchorWorker.fetch(new Request("https://private-anchor.workrr.ai/v1/anchors/head"), env);
+  assert.equal(headResp.status, 200);
+  const head = await headResp.json();
+  assert.equal(head.sequence, 1);
+  assert.equal(head.chainHash, receipt.chainHash);
+
+  // Tampered receipt is rejected
+  const tampered = { ...receipt, chainHash: "b".repeat(64) };
+  assert.match(verifyAnchorReceipt(tampered, hashes), /chainHash invalid/);
 });
 
 test("GitLab signing helper validates statement and writes Sigstore bundle", async () => {
