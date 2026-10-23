@@ -22,6 +22,27 @@ import (
 // sigstore-go decodes it into certificate.Extensions.BuildSignerDigest.
 const OIDBuildSignerDigest = "1.3.6.1.4.1.57264.1.10"
 
+type AnchorHashes struct {
+	EnvelopeHash      string `json:"envelopeHash"`
+	BundleHash        string `json:"bundleHash"`
+	SubjectDigestHash string `json:"subjectDigestHash"`
+}
+
+type AnchorReceipt struct {
+	Sequence          int    `json:"sequence"`
+	EnvelopeHash      string `json:"envelopeHash"`
+	BundleHash        string `json:"bundleHash"`
+	SubjectDigestHash string `json:"subjectDigestHash"`
+	AnchoredAt        string `json:"anchoredAt"`
+	PrevChainHash     string `json:"prevChainHash"`
+	ChainHash         string `json:"chainHash"`
+}
+
+type VerifyOptions struct {
+	PrivateMode   bool
+	AnchorReceipt *AnchorReceipt
+}
+
 type BundleResult struct {
 	BundlePath     string `json:"bundlePath"`
 	OK             bool   `json:"ok"`
@@ -29,7 +50,9 @@ type BundleResult struct {
 	Forge          Forge  `json:"forge,omitempty"`
 	SignerIdentity string `json:"signerIdentity,omitempty"`
 	// Statement is the attestation payload exactly as signed (generic JSON).
-	Statement any `json:"statement,omitempty"`
+	Statement      any           `json:"statement,omitempty"`
+	PrivateSigning *bool         `json:"privateSigning,omitempty"`
+	AnchorHashes   *AnchorHashes `json:"anchorHashes,omitempty"`
 }
 
 type VerifyResult struct {
@@ -40,6 +63,8 @@ type VerifyResult struct {
 	PolicyName     string         `json:"policyName,omitempty"`
 	PolicyDigest   string         `json:"policyDigest,omitempty"`
 	PolicyStatus   string         `json:"policyStatus,omitempty"`
+	PrivateMode    bool           `json:"privateMode,omitempty"`
+	Anchor         *AnchorReceipt `json:"anchor,omitempty"`
 	Bundles        []BundleResult `json:"bundles"`
 	Notes          []string       `json:"notes"`
 }
@@ -268,16 +293,54 @@ func (t *TrustedMaterialSource) Get() (root.TrustedMaterial, error) {
 	return t.tm, t.err
 }
 
+func ComputeAnchorHashes(rawBundle []byte, dsseEnvelope any, artifactDigest string) (AnchorHashes, error) {
+	canonEnv, err := CanonicalJSON(dsseEnvelope)
+	if err != nil {
+		return AnchorHashes{}, err
+	}
+	return AnchorHashes{
+		EnvelopeHash:      SHA256Hex([]byte(canonEnv)),
+		BundleHash:        SHA256Hex(rawBundle),
+		SubjectDigestHash: SHA256Hex([]byte(strings.ToLower(artifactDigest))),
+	}, nil
+}
+
+func ComputeAnchorChainHash(r AnchorReceipt) string {
+	input := fmt.Sprintf("%d:%s:%s:%s:%s:%s", r.Sequence, r.EnvelopeHash, r.BundleHash, r.SubjectDigestHash, r.AnchoredAt, r.PrevChainHash)
+	return SHA256Hex([]byte(input))
+}
+
+func VerifyAnchorReceipt(receipt AnchorReceipt, expected AnchorHashes) string {
+	if receipt.EnvelopeHash != expected.EnvelopeHash {
+		return fmt.Sprintf("anchor receipt envelopeHash mismatch: receipt has %s, bundle is %s", receipt.EnvelopeHash, expected.EnvelopeHash)
+	}
+	if receipt.BundleHash != expected.BundleHash {
+		return fmt.Sprintf("anchor receipt bundleHash mismatch: receipt has %s, bundle is %s", receipt.BundleHash, expected.BundleHash)
+	}
+	if receipt.SubjectDigestHash != expected.SubjectDigestHash {
+		return fmt.Sprintf("anchor receipt subjectDigestHash mismatch: receipt has %s, artifact is %s", receipt.SubjectDigestHash, expected.SubjectDigestHash)
+	}
+	wantChain := ComputeAnchorChainHash(receipt)
+	if receipt.ChainHash != wantChain {
+		return fmt.Sprintf("anchor receipt chainHash invalid: got %s, expected %s", receipt.ChainHash, wantChain)
+	}
+	return ""
+}
+
 // VerifySigstore checks the certificate chain to the Fulcio root, the signed
 // certificate timestamp, the signature, Rekor inclusion with an integrated
 // timestamp, and that the in-toto subject carries the given digest. It returns
 // the signing identity; matching it to a trust policy is the caller's job.
 func VerifySigstore(b *bundle.Bundle, tm root.TrustedMaterial, digestAlg string, digest []byte) (*Signer, error) {
-	v, err := verify.NewVerifier(tm,
-		verify.WithSignedCertificateTimestamps(1),
-		verify.WithTransparencyLog(1),
-		verify.WithObserverTimestamps(1),
-	)
+	return verifySigstoreMode(b, tm, digestAlg, digest, false)
+}
+
+func verifySigstoreMode(b *bundle.Bundle, tm root.TrustedMaterial, digestAlg string, digest []byte, privateMode bool) (*Signer, error) {
+	opts := []verify.VerifierOption{verify.WithObserverTimestamps(1)}
+	if !privateMode {
+		opts = append(opts, verify.WithSignedCertificateTimestamps(1), verify.WithTransparencyLog(1))
+	}
+	v, err := verify.NewVerifier(tm, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -293,6 +356,10 @@ func VerifySigstore(b *bundle.Bundle, tm root.TrustedMaterial, digestAlg string,
 }
 
 func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *TrustedMaterialSource) BundleResult {
+	return VerifyBundleWithOptions(bundlePath, artifactDigest, policy, tms, VerifyOptions{})
+}
+
+func VerifyBundleWithOptions(bundlePath, artifactDigest string, policy *TrustPolicy, tms *TrustedMaterialSource, opts VerifyOptions) BundleResult {
 	fail := func(msg string, statement any) BundleResult {
 		return BundleResult{BundlePath: bundlePath, OK: false, Error: msg, Statement: statement}
 	}
@@ -304,6 +371,12 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 		DSSEEnvelope *struct {
 			Payload string `json:"payload"`
 		} `json:"dsseEnvelope"`
+		VerificationMaterial *struct {
+			TlogEntries               []any `json:"tlogEntries"`
+			TimestampVerificationData *struct {
+				RFC3161Timestamps []any `json:"rfc3161Timestamps"`
+			} `json:"timestampVerificationData"`
+		} `json:"verificationMaterial"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fail("cannot read bundle: "+err.Error(), nil)
@@ -336,6 +409,33 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 		return fail("certificate is for a different artifact (digest mismatch)", statement)
 	}
 
+	hasTlog := raw.VerificationMaterial != nil && len(raw.VerificationMaterial.TlogEntries) > 0
+	hasRFC3161 := raw.VerificationMaterial != nil && raw.VerificationMaterial.TimestampVerificationData != nil && len(raw.VerificationMaterial.TimestampVerificationData.RFC3161Timestamps) > 0
+	privateSigning := !hasTlog && hasRFC3161
+	if privateSigning && !opts.PrivateMode {
+		r := fail("bundle uses private-tier TSA signing without public Rekor inclusion (pass --private to verify)", statement)
+		r.PrivateSigning = &privateSigning
+		return r
+	}
+
+	genericBundle, err := DecodeJSON(data)
+	if err != nil {
+		return fail("cannot read bundle: "+err.Error(), statement)
+	}
+	bm, _ := genericBundle.(map[string]any)
+	anchorHashes, err := ComputeAnchorHashes(data, bm["dsseEnvelope"], artifactDigest)
+	if err != nil {
+		return fail("cannot compute anchor hashes: "+err.Error(), statement)
+	}
+	if opts.AnchorReceipt != nil {
+		if anchorErr := VerifyAnchorReceipt(*opts.AnchorReceipt, anchorHashes); anchorErr != "" {
+			r := fail(anchorErr, statement)
+			r.PrivateSigning = &privateSigning
+			r.AnchorHashes = &anchorHashes
+			return r
+		}
+	}
+
 	digest, err := hex.DecodeString(artifactDigest)
 	if err != nil {
 		return fail("invalid artifact digest", statement)
@@ -348,9 +448,14 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 	if err != nil {
 		return fail("signature verification failed: "+err.Error(), statement)
 	}
-	signer, err := VerifySigstore(b, tm, "sha256", digest)
+	signer, err := verifySigstoreMode(b, tm, "sha256", digest, opts.PrivateMode && privateSigning)
 	if err != nil {
-		return fail("signature verification failed: "+err.Error(), statement)
+		r := fail("signature verification failed: "+err.Error(), statement)
+		if opts.PrivateMode {
+			r.PrivateSigning = &privateSigning
+			r.AnchorHashes = &anchorHashes
+		}
+		return r
 	}
 	accepted := MatchSigner(policy, signer)
 	if accepted == nil {
@@ -360,9 +465,18 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 		}
 		r := fail("signer is not an accepted workrr certifier: "+san, statement)
 		r.SignerIdentity = signer.SAN
+		if opts.PrivateMode {
+			r.PrivateSigning = &privateSigning
+			r.AnchorHashes = &anchorHashes
+		}
 		return r
 	}
-	return BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Statement: statement}
+	out := BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Statement: statement}
+	if opts.PrivateMode {
+		out.PrivateSigning = &privateSigning
+		out.AnchorHashes = &anchorHashes
+	}
+	return out
 }
 
 func predicateField(statement any, key string) any {
@@ -386,14 +500,28 @@ func predicateSource(statement any) string {
 }
 
 func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms *TrustedMaterialSource, expectedSource string) (*VerifyResult, error) {
+	return VerifyArtifactWithOptions(path, bundlePaths, policy, tms, expectedSource, VerifyOptions{})
+}
+
+func VerifyArtifactWithOptions(path string, bundlePaths []string, policy *TrustPolicy, tms *TrustedMaterialSource, expectedSource string, opts VerifyOptions) (*VerifyResult, error) {
 	d, err := DigestArtifact(path)
 	if err != nil {
 		return nil, err
 	}
-	res := &VerifyResult{ArtifactDigest: d.SHA256, Bundles: []BundleResult{}, Notes: []string{"revocation is not checked in v0.1 (revocation ledger ships in v0.2)"}}
+	notes := []string{"revocation is not checked in v0.1 (revocation ledger ships in v0.2)"}
+	if opts.PrivateMode {
+		notes = append(notes, "verified in private mode (hash-only public anchor preserves confidentiality)")
+	}
+	res := &VerifyResult{
+		ArtifactDigest: d.SHA256,
+		PrivateMode:    opts.PrivateMode,
+		Anchor:         opts.AnchorReceipt,
+		Bundles:        []BundleResult{},
+		Notes:          notes,
+	}
 	var valid []BundleResult
 	for _, bp := range bundlePaths {
-		r := VerifyBundle(bp, d.SHA256, policy, tms)
+		r := VerifyBundleWithOptions(bp, d.SHA256, policy, tms, opts)
 		res.Bundles = append(res.Bundles, r)
 		if r.OK {
 			valid = append(valid, r)

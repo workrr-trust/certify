@@ -20,7 +20,9 @@ Usage:
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
-                        [--source <repo>] [--json] [--trusted-root trusted_root.json]
+                        [--source <repo>] [--private] [--trusted-root trusted_root.json]
+                        [--anchor-receipt receipt.json] [--json]
+  workrr anchor  <path> --bundle <file> [--out anchor-request.json]
 
   test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
            in CI, use a job WITHOUT signing permission.
@@ -31,6 +33,9 @@ Usage:
            is not the baseline does not verify at a baseline level. --source
            fails when the certificate's publisher repo does not match.
            --trusted-root pins a Sigstore trusted root instead of fetching it via TUF.
+           --private accepts private-tier TSA attestations and optional hash-only
+           anchor receipts (--anchor-receipt).
+  anchor   Computes the hash-only public anchor request payload for a private bundle.
 `
 
 type args struct {
@@ -40,8 +45,8 @@ type args struct {
 	positions []string
 }
 
-var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "source": true}
-var boolOpts = map[string]bool{"run-tests": true, "json": true}
+var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "anchor-receipt": true, "source": true}
+var boolOpts = map[string]bool{"run-tests": true, "private": true, "json": true}
 
 // parseArgs follows node:util parseArgs in strict mode: --name value,
 // --name=value, booleans take no value, `--` ends options.
@@ -247,8 +252,23 @@ func run(argv []string) (int, error) {
 				return 0, err
 			}
 		}
+		var anchorReceipt *certify.AnchorReceipt
+		if ar := a.strings["anchor-receipt"]; ar != "" {
+			b, err := os.ReadFile(ar)
+			if err != nil {
+				return 0, err
+			}
+			var r certify.AnchorReceipt
+			if err := json.Unmarshal(b, &r); err != nil {
+				return 0, err
+			}
+			anchorReceipt = &r
+		}
 		tms := &certify.TrustedMaterialSource{Path: a.strings["trusted-root"]}
-		result, err := certify.VerifyArtifact(path, a.bundles, &policy, tms, a.strings["source"])
+		result, err := certify.VerifyArtifactWithOptions(path, a.bundles, &policy, tms, a.strings["source"], certify.VerifyOptions{
+			PrivateMode:   a.bools["private"],
+			AnchorReceipt: anchorReceipt,
+		})
 		if err != nil {
 			return 0, err
 		}
@@ -277,6 +297,9 @@ func run(argv []string) (int, error) {
 					fmt.Printf("  policy %s\n", name)
 				}
 			}
+			if result.Anchor != nil {
+				fmt.Printf("  anchor #%d %s (%s)\n", result.Anchor.Sequence, result.Anchor.ChainHash, result.Anchor.AnchoredAt)
+			}
 			fmt.Println(certify.VerificationHeadline(result.OK, result.Level, result.PolicyStatus, result.Notes))
 			for _, n := range result.Notes {
 				fmt.Printf("  note: %s\n", n)
@@ -286,6 +309,40 @@ func run(argv []string) (int, error) {
 			return 0, nil
 		}
 		return 1, nil
+
+	case "anchor":
+		if len(a.bundles) == 0 {
+			return 0, fmt.Errorf("anchor needs --bundle <file>")
+		}
+		d, err := certify.DigestArtifact(path)
+		if err != nil {
+			return 0, err
+		}
+		rawBytes, err := os.ReadFile(a.bundles[0])
+		if err != nil {
+			return 0, err
+		}
+		genericBundle, err := certify.DecodeJSON(rawBytes)
+		if err != nil {
+			return 0, err
+		}
+		bm, _ := genericBundle.(map[string]any)
+		if bm["dsseEnvelope"] == nil {
+			return 0, fmt.Errorf("bundle has no DSSE envelope")
+		}
+		hashes, err := certify.ComputeAnchorHashes(rawBytes, bm["dsseEnvelope"], d.SHA256)
+		if err != nil {
+			return 0, err
+		}
+		out := prettyJSON(hashes)
+		if p := a.strings["out"]; p != "" {
+			if err := os.WriteFile(p, out, 0o644); err != nil {
+				return 0, err
+			}
+		} else {
+			os.Stdout.Write(out)
+		}
+		return 0, nil
 	}
 	return 0, fmt.Errorf("unknown command: %s\n\n%s", cmd, help)
 }

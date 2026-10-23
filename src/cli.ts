@@ -8,7 +8,7 @@ import { BASELINE_POLICY, type Policy } from "./checks/policy.js";
 import { runTests, type TestsReport } from "./checks/tests.js";
 import { digestArtifact } from "./digest.js";
 import { DEFAULT_TRUST_POLICY, type TrustPolicy } from "./trust-policy.js";
-import { verificationHeadline, verifyArtifact } from "./verify.js";
+import { computeAnchorHashes, verificationHeadline, verifyArtifact, type AnchorReceipt } from "./verify.js";
 import { VERSION } from "./version.js";
 
 const HELP = `workrr ${VERSION} — certify and verify AI agent artifacts
@@ -19,7 +19,9 @@ Usage:
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
-                        [--source <repo>] [--json]
+                        [--source <repo>] [--private] [--trusted-root trusted_root.json]
+                        [--anchor-receipt receipt.json] [--json]
+  workrr anchor  <path> --bundle <file> [--out anchor-request.json]
 
   test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
            in CI, use a job WITHOUT signing permission.
@@ -29,6 +31,9 @@ Usage:
            certifier identity. Reports the policy name and digest. A policy that
            is not the baseline does not verify at a baseline level. --source
            fails when the certificate's publisher repo does not match.
+           --private accepts private-tier TSA attestations and optional hash-only
+           anchor receipts (--anchor-receipt).
+  anchor   Computes the hash-only public anchor request payload for a private bundle.
 `;
 
 async function readJson<T>(path: string): Promise<T> {
@@ -57,7 +62,10 @@ async function main(argv: string[]): Promise<number> {
       "predicate-out": { type: "string" },
       bundle: { type: "string", multiple: true },
       "trust-policy": { type: "string" },
+      "trusted-root": { type: "string" },
+      "anchor-receipt": { type: "string" },
       source: { type: "string" },
+      private: { type: "boolean" },
       json: { type: "boolean" },
     },
   });
@@ -115,7 +123,12 @@ async function main(argv: string[]): Promise<number> {
     case "verify": {
       if (!values.bundle?.length) throw new Error("verify needs at least one --bundle");
       const policy = values["trust-policy"] ? await readJson<TrustPolicy>(values["trust-policy"]) : DEFAULT_TRUST_POLICY;
-      const result = await verifyArtifact(path, values.bundle, policy, values.source);
+      const anchorReceipt = values["anchor-receipt"] ? await readJson<AnchorReceipt>(values["anchor-receipt"]) : undefined;
+      const result = await verifyArtifact(path, values.bundle, policy, values.source, {
+        privateMode: values.private,
+        trustedRootPath: values["trusted-root"],
+        anchorReceipt,
+      });
       if (values.json) {
         process.stdout.write(JSON.stringify(result, null, 2) + "\n");
       } else {
@@ -127,10 +140,25 @@ async function main(argv: string[]): Promise<number> {
         if (result.policyName || result.policyDigest) {
           process.stdout.write(`  policy ${result.policyName ?? "(unnamed)"}${result.policyDigest ? ` ${result.policyDigest}` : ""}\n`);
         }
+        if (result.anchor) {
+          process.stdout.write(`  anchor #${result.anchor.sequence} ${result.anchor.chainHash} (${result.anchor.anchoredAt})\n`);
+        }
         process.stdout.write(`${verificationHeadline(result)}\n`);
         for (const n of result.notes) process.stdout.write(`  note: ${n}\n`);
       }
       return result.ok ? 0 : 1;
+    }
+    case "anchor": {
+      if (!values.bundle?.length) throw new Error("anchor needs --bundle <file>");
+      const { sha256: artifactDigest } = await digestArtifact(path);
+      const rawBytes = await readFile(values.bundle[0]);
+      const parsed = JSON.parse(rawBytes.toString("utf8")) as { dsseEnvelope?: unknown };
+      if (!parsed.dsseEnvelope) throw new Error("bundle has no DSSE envelope");
+      const hashes = computeAnchorHashes(rawBytes, parsed.dsseEnvelope, artifactDigest);
+      const out = JSON.stringify(hashes, null, 2) + "\n";
+      if (values.out) await writeFile(values.out, out);
+      else process.stdout.write(out);
+      return 0;
     }
     default:
       throw new Error(`unknown command: ${cmd}\n\n${HELP}`);
