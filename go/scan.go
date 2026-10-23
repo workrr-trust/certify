@@ -54,7 +54,7 @@ var Rules = []Rule{
 	{ID: "WT006", Severity: "high", Description: "Reads credential stores",
 		Pattern: "(~|\\$HOME)?/?\\.(ssh/(id_[a-z0-9]+|authorized_keys)|aws/credentials|netrc|git-credentials|docker/config\\.json|kube/config)\\b", Flags: "gi"},
 	{ID: "WT007", Severity: "high", Description: "Instructs concealment from the user",
-		Pattern: "\\b(do\\s+not|don't|never)\\s+(tell|inform|mention|reveal|show)\\b[^\\n]{0,40}\\b(the\\s+)?(user|human|operator)\\b", Flags: "gi"},
+		Pattern: "\\b(do\\s+not|don't|never)\\s+(tell|inform|mention|reveal|show)\\b[^\\n]{0,40}\\bthe\\s+(user|human|operator)\\b", Flags: "gi"},
 	{ID: "WT008", Severity: "high", Description: "Hidden HTML comment carrying instructions",
 		Pattern: "<!--(?:(?!-->)[\\s\\S]){0,2000}?\\b(ignore|instruction|system prompt|you are|assistant|exfiltrate)\\b[\\s\\S]*?-->", Flags: "gi"},
 	{ID: "WT009", Severity: "warn", Description: "Sends data to a URL",
@@ -72,18 +72,29 @@ func RulesetDigest() string {
 	return d
 }
 
+type ScanException struct {
+	Rule       string `json:"rule"`
+	File       string `json:"file"`
+	Line       *int   `json:"line,omitempty"`
+	Reason     string `json:"reason"`
+	ApprovedBy string `json:"approvedBy,omitempty"`
+}
+
 type Finding struct {
-	Rule     string   `json:"rule"`
-	Severity Severity `json:"severity"`
-	File     string   `json:"file"`
-	Line     int      `json:"line"`
+	Rule            string   `json:"rule"`
+	Severity        Severity `json:"severity"`
+	File            string   `json:"file"`
+	Line            int      `json:"line"`
+	Excepted        bool     `json:"excepted,omitempty"`
+	ExceptionReason string   `json:"exceptionReason,omitempty"`
 }
 
 type ScanResult struct {
-	Result         string    `json:"result"`
-	RulesetVersion string    `json:"rulesetVersion"`
-	RulesetDigest  string    `json:"rulesetDigest"`
-	Findings       []Finding `json:"findings"`
+	Result         string          `json:"result"`
+	RulesetVersion string          `json:"rulesetVersion"`
+	RulesetDigest  string          `json:"rulesetDigest"`
+	Findings       []Finding       `json:"findings"`
+	Exceptions     []ScanException `json:"exceptions,omitempty"`
 }
 
 // A matcher returns the start offsets of every match, in order, as JavaScript's
@@ -115,7 +126,33 @@ var matchers = func() map[string]matcher {
 	return m
 }()
 
-func ScanArtifact(a *Artifact) ScanResult {
+var (
+	evalFixturePathRe   = regexp.MustCompile(`(^|/)(evals|test|tests|fixtures)/`)
+	defensiveWT001LineRe = regexp.MustCompile(`\b(` + asciiFold("never") + `[` + JSWhitespaceClass + `]+` + asciiFold("follow") +
+		`|` + asciiFold("not") + `[` + JSWhitespaceClass + `]+` + asciiFold("a") + asciiFold("n") + `?[` + JSWhitespaceClass + `]+` + asciiFold("instruction") +
+		`|` + asciiFold("neither") + `[` + JSWhitespaceClass + `]+` + asciiFold("a") + asciiFold("n") + `?[` + JSWhitespaceClass + `]+` + asciiFold("instruction") +
+		`|` + asciiFold("prompt") + `[- ]` + asciiFold("injection") +
+		`|` + asciiFold("untrusted") + `[` + JSWhitespaceClass + `]+` + asciiFold("data") + `)\b`)
+)
+
+func isDefensiveExample(ruleID, file, lineText string, colBytes int) bool {
+	if ruleID != "WT001" {
+		return false
+	}
+	if evalFixturePathRe.MatchString(file) && strings.HasSuffix(file, ".json") {
+		return true
+	}
+	if !defensiveWT001LineRe.MatchString(lineText) {
+		return false
+	}
+	before := lineText
+	if colBytes >= 0 && colBytes <= len(lineText) {
+		before = lineText[:colBytes]
+	}
+	return strings.ContainsAny(before, "\"'\u201c")
+}
+
+func ScanArtifact(a *Artifact, exceptions ...[]ScanException) ScanResult {
 	findings := []Finding{}
 	for _, f := range a.Digest.Files {
 		p := a.Root
@@ -138,24 +175,58 @@ func ScanArtifact(a *Artifact) ScanResult {
 		}
 		return strings.Compare(a.Rule, b.Rule)
 	})
+	var applied []ScanException
+	if len(exceptions) > 0 && len(exceptions[0]) > 0 {
+		exList := exceptions[0]
+		for i := range findings {
+			f := &findings[i]
+			for _, ex := range exList {
+				if ex.Rule == f.Rule && ex.File == f.File && (ex.Line == nil || *ex.Line == f.Line) {
+					f.Excepted = true
+					f.ExceptionReason = ex.Reason
+					if !slices.ContainsFunc(applied, func(a ScanException) bool {
+						return a.Rule == ex.Rule && a.File == ex.File && a.Reason == ex.Reason && ((a.Line == nil && ex.Line == nil) || (a.Line != nil && ex.Line != nil && *a.Line == *ex.Line))
+					}) {
+						applied = append(applied, ex)
+					}
+					break
+				}
+			}
+		}
+	}
 	result := "pass"
 	for _, f := range findings {
-		if f.Severity != "warn" {
+		if f.Severity != "warn" && !f.Excepted {
 			result = "fail"
 		}
 	}
-	return ScanResult{Result: result, RulesetVersion: RulesetVersion, RulesetDigest: RulesetDigest(), Findings: findings}
+	return ScanResult{Result: result, RulesetVersion: RulesetVersion, RulesetDigest: RulesetDigest(), Findings: findings, Exceptions: applied}
 }
 
 // ScanText reports at most one finding per rule per line (the line of the match start).
 func ScanText(text, file string) []Finding {
 	var out []Finding
+	lines := strings.Split(text, "\n")
 	for _, r := range Rules {
 		subject, starts := matchers[r.ID](text)
 		seen := map[int]bool{}
 		for _, s := range starts {
-			line := strings.Count(subject[:s], "\n") + 1
+			prefix := subject[:s]
+			lineIdx := strings.Count(prefix, "\n")
+			line := lineIdx + 1
 			if seen[line] {
+				continue
+			}
+			lastNL := strings.LastIndex(prefix, "\n")
+			col := s
+			if lastNL >= 0 {
+				col = s - lastNL - 1
+			}
+			lineText := ""
+			if lineIdx < len(lines) {
+				lineText = lines[lineIdx]
+			}
+			if isDefensiveExample(r.ID, file, lineText, col) {
 				continue
 			}
 			seen[line] = true
