@@ -1,0 +1,106 @@
+# workrr Trust — Organization Policy Gate (reusable workflow).
+#
+# Configure as a required status check in GitHub Organization Rulesets or in a
+# repository's pull_request workflow to block uncertified or non-conforming skills:
+#
+#   jobs:
+#     workrr-org-gate:
+#       permissions: { contents: read }
+#       uses: workrr-trust/certify/.github/workflows/org-policy-gate.yml@v0.1.1
+#       with:
+#         min-level: silver
+name: workrr-org-policy-gate
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        description: Root path in the repository to scan for skills
+        type: string
+        default: "."
+      min-level:
+        description: Minimum required certificate level (banded, silver, or gold)
+        type: string
+        default: "silver"
+      policy:
+        description: Optional path to the org's required policy JSON file
+        type: string
+        default: ""
+      certificates-dir:
+        description: Optional directory holding <digest>.sigstore.json or <skill>/certificate.sigstore.json bundles
+        type: string
+        default: ""
+      source:
+        description: Optional allowed publisher repository or org prefix
+        type: string
+        default: ""
+    outputs:
+      passed:
+        value: ${{ jobs.gate.outputs.passed }}
+      total-skills:
+        value: ${{ jobs.gate.outputs.total-skills }}
+      failed-skills:
+        value: ${{ jobs.gate.outputs.failed-skills }}
+
+permissions: {}
+
+jobs:
+  gate:
+    name: workrr org policy gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      passed: ${{ steps.run.outputs.passed }}
+      total-skills: ${{ steps.run.outputs.total-skills }}
+      failed-skills: ${{ steps.run.outputs.failed-skills }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: subject
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: workrr-trust/certify
+          path: .workrr-certifier
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Build certifier
+        working-directory: .workrr-certifier
+        run: npm ci --ignore-scripts && npm run build
+      - name: Run org policy gate
+        id: run
+        env:
+          GATE_PATH: ${{ inputs.path }}
+          MIN_LEVEL: ${{ inputs.min-level }}
+          POLICY_PATH: ${{ inputs.policy }}
+          CERTS_DIR: ${{ inputs.certificates-dir }}
+          ALLOWED_SOURCE: ${{ inputs.source }}
+        run: |
+          args=("subject/$GATE_PATH" --min-level "$MIN_LEVEL" --json)
+          if [ -n "$POLICY_PATH" ]; then args+=(--policy "subject/$POLICY_PATH"); fi
+          if [ -n "$CERTS_DIR" ]; then args+=(--certificates-dir "subject/$CERTS_DIR"); fi
+          if [ -n "$ALLOWED_SOURCE" ]; then args+=(--source "$ALLOWED_SOURCE"); fi
+          set +e
+          node .workrr-certifier/dist/cli.js gate "${args[@]}" > gate-result.json
+          code=$?
+          set -e
+          passed=$(jq -r .ok gate-result.json)
+          total=$(jq -r .totalSkills gate-result.json)
+          failed=$(jq -r .failedSkills gate-result.json)
+          {
+            echo "passed=$passed"
+            echo "total-skills=$total"
+            echo "failed-skills=$failed"
+          } >>"$GITHUB_OUTPUT"
+          {
+            echo "### workrr Org Policy Gate"
+            echo "- status: **$( [ "$passed" = "true" ] && echo "PASSED" || echo "BLOCKED" )**"
+            echo "- required level: \`$MIN_LEVEL\`"
+            echo "- skills passing: \`$(jq -r .passedSkills gate-result.json)/$total\`"
+            jq -r '.skills[] | if .ok then "- ✓ `\(.path)` (\(.name)) — level `\(.level)`" else "- ✗ `\(.path)` (\(.name)) — \(.reasons | join("; "))" end' gate-result.json
+          } >>"$GITHUB_STEP_SUMMARY"
+          cat gate-result.json
+          exit "$code"

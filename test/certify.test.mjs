@@ -14,6 +14,7 @@ import { scanArtifact, scanText } from "../dist/checks/scan.js";
 import { runTests } from "../dist/checks/tests.js";
 import { canonicalJson, digestArtifact, sha256Hex } from "../dist/digest.js";
 import { normalizeRepoUri } from "../dist/checks/provenance.js";
+import { runOrgPolicyGate } from "../dist/gate.js";
 import {
   applyVerificationGates,
   baselinePolicyDigest,
@@ -191,6 +192,73 @@ test("reserved baseline name cannot certify payload.exe as silver", async () => 
 test("normalizes git remotes", () => {
   assert.equal(normalizeRepoUri("git@github.com:workrr-trust/certify.git"), "https://github.com/workrr-trust/certify");
   assert.equal(normalizeRepoUri("https://token@github.com/a/b.git"), "https://github.com/a/b");
+});
+
+test("org policy gate blocks uncertified skills and passes when all skills meet required level", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "workrr-gate-"));
+  const skillA = join(repo, "skills", "alpha");
+  const skillB = join(repo, "skills", "beta");
+  await mkdir(skillA, { recursive: true });
+  await mkdir(skillB, { recursive: true });
+  await writeFile(join(skillA, "SKILL.md"), "---\nname: alpha\ndescription: Certified skill A.\n---\n# Alpha\n");
+  await writeFile(join(skillB, "SKILL.md"), "---\nname: beta\ndescription: Uncertified skill B.\n---\n# Beta\n");
+  await writeFile(join(skillA, "certificate.sigstore.json"), "{}");
+
+  const makeValidBundle = (bundlePath, digest, level = "silver") => ({
+    bundlePath,
+    ok: true,
+    forge: "github",
+    statement: {
+      _type: "https://in-toto.io/Statement/v1",
+      subject: [{ name: "skill", digest: { sha256: digest } }],
+      predicateType: "https://trust.workrr.ai/certificate/v0.1",
+      predicate: {
+        artifact: { name: "skill", type: "skill", digestAlgorithm: "workrr-dirhash-v1", fileCount: 1 },
+        source: { uri: "https://github.com/workrr-trust/sample-skills", commit: "a".repeat(40), path: "." },
+        checks: {
+          provenance: { result: "pass", unchangedFromCommit: true },
+          policy: { result: "pass", policyName: "workrr-baseline-v0.1", policyDigest: baselinePolicyDigest(), violations: [] },
+          scan: { result: "pass", rulesetVersion: "workrr-scan-v0.1", rulesetDigest: `sha256:${"0".repeat(64)}`, findings: [] },
+          tests: { result: level === "silver" ? "pass" : "none" },
+        },
+        level,
+        certifier: { name: "@workrr-trust/certify", version: "0.1.1", runtime: "github-actions" },
+        certifiedAt: "2026-10-22T00:00:00Z",
+      },
+    },
+  });
+
+  // 1. Beta is uncertified -> gate fails
+  const blocked = await runOrgPolicyGate(repo, {
+    minLevel: "silver",
+    verifyBundleFn: async (bp, digest) => makeValidBundle(bp, digest, "silver"),
+  });
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.totalSkills, 2);
+  assert.equal(blocked.passedSkills, 1);
+  assert.equal(blocked.failedSkills, 1);
+  const betaRes = blocked.skills.find((s) => s.path === "skills/beta");
+  assert.equal(betaRes.ok, false);
+  assert.ok(betaRes.reasons.some((r) => r.includes("uncertified skill")));
+
+  // 2. Certify Beta as banded when silver is required -> gate still blocks
+  await writeFile(join(skillB, "certificate.sigstore.json"), "{}");
+  const belowMin = await runOrgPolicyGate(repo, {
+    minLevel: "silver",
+    verifyBundleFn: async (bp, digest) => makeValidBundle(bp, digest, bp.includes("beta") ? "banded" : "silver"),
+  });
+  assert.equal(belowMin.ok, false);
+  assert.ok(belowMin.skills.find((s) => s.path === "skills/beta").reasons.some((r) => r.includes("below required minimum silver")));
+
+  // 3. Both certified at silver -> gate passes
+  const passed = await runOrgPolicyGate(repo, {
+    minLevel: "silver",
+    allowedSources: ["workrr-trust/sample-skills"],
+    verifyBundleFn: async (bp, digest) => makeValidBundle(bp, digest, "silver"),
+  });
+  assert.equal(passed.ok, true);
+  assert.equal(passed.passedSkills, 2);
+  assert.equal(passed.failedSkills, 0);
 });
 
 test("private mode rejects TSA-only bundles without --private and verifies hash-only anchor receipts", async () => {
@@ -695,4 +763,5 @@ test("registry Worker manages verified publishers, R2 bundles, and hash-chained 
   const tamperedBody = await tamperedResp.json();
   assert.equal(tamperedBody.ok, false);
   assert.match(tamperedBody.error, /payload_hash mismatch at sequence 1/);
+>>>>>>> origin/main
 });
