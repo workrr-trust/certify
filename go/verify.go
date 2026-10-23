@@ -58,9 +58,11 @@ type VerificationGate struct {
 
 // Signer is the certificate identity that signed a bundle.
 type Signer struct {
-	SAN               string
-	Issuer            string
-	BuildSignerDigest string // "" when the certificate has no such extension
+	SAN                    string
+	Issuer                 string
+	BuildSignerDigest      string // "" when the certificate has no such extension
+	SourceRepositoryURI    string // OID 1.3.6.1.4.1.57264.1.12
+	SourceRepositoryDigest string // OID 1.3.6.1.4.1.57264.1.13
 }
 
 func MatchSigner(policy *TrustPolicy, s *Signer) *AcceptedSigner {
@@ -289,7 +291,55 @@ func VerifySigstore(b *bundle.Bundle, tm root.TrustedMaterial, digestAlg string,
 		return nil, fmt.Errorf("bundle is not signed by a Fulcio certificate")
 	}
 	c := res.Signature.Certificate
-	return &Signer{SAN: c.SubjectAlternativeName, Issuer: c.Extensions.Issuer, BuildSignerDigest: c.Extensions.BuildSignerDigest}, nil
+	return &Signer{
+		SAN:                    c.SubjectAlternativeName,
+		Issuer:                 c.Extensions.Issuer,
+		BuildSignerDigest:      c.Extensions.BuildSignerDigest,
+		SourceRepositoryURI:    c.Extensions.SourceRepositoryURI,
+		SourceRepositoryDigest: c.Extensions.SourceRepositoryDigest,
+	}, nil
+}
+
+// DeriveStatementLevel computes the certified level from the signed checks
+// rather than trusting predicate.level alone.
+func DeriveStatementLevel(statement any) string {
+	checks, _ := predicateField(statement, "checks").(map[string]any)
+	if checks == nil {
+		return ""
+	}
+	resOf := func(k string) string {
+		m, _ := checks[k].(map[string]any)
+		r, _ := m["result"].(string)
+		return r
+	}
+	if resOf("provenance") != "pass" || resOf("policy") != "pass" || resOf("scan") != "pass" {
+		return ""
+	}
+	switch resOf("tests") {
+	case "pass":
+		return "silver"
+	case "none":
+		return "banded"
+	}
+	return ""
+}
+
+// CheckCertificateSourceAndCommit compares the predicate's source URI and commit
+// against the Fulcio certificate's SourceRepositoryURI and SourceRepositoryDigest.
+func CheckCertificateSourceAndCommit(statement any, signer *Signer) string {
+	src, _ := predicateField(statement, "source").(map[string]any)
+	if src == nil {
+		return "statement has no source field"
+	}
+	uri, _ := src["uri"].(string)
+	commit, _ := src["commit"].(string)
+	if signer != nil && signer.SourceRepositoryURI != "" && canonicalSource(uri) != canonicalSource(signer.SourceRepositoryURI) {
+		return "certificate source URI mismatch: predicate claims " + uri + ", Fulcio certificate recorded " + signer.SourceRepositoryURI
+	}
+	if signer != nil && signer.SourceRepositoryDigest != "" && !strings.EqualFold(commit, signer.SourceRepositoryDigest) {
+		return "certificate source commit mismatch: predicate claims " + commit + ", Fulcio certificate recorded " + signer.SourceRepositoryDigest
+	}
+	return ""
 }
 
 func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *TrustedMaterialSource) BundleResult {
@@ -362,6 +412,25 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 		r.SignerIdentity = signer.SAN
 		return r
 	}
+	if mismatch := CheckCertificateSourceAndCommit(statement, signer); mismatch != "" {
+		r := fail(mismatch, statement)
+		r.Forge = accepted.Forge
+		r.SignerIdentity = signer.SAN
+		return r
+	}
+	derived := DeriveStatementLevel(statement)
+	if derived == "" {
+		r := fail("certificate checks did not pass", statement)
+		r.Forge = accepted.Forge
+		r.SignerIdentity = signer.SAN
+		return r
+	}
+	if predicateField(statement, "level") == "silver" && derived != "silver" {
+		r := fail("certificate claims level silver, but signed checks do not support silver", statement)
+		r.Forge = accepted.Forge
+		r.SignerIdentity = signer.SAN
+		return r
+	}
 	return BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Statement: statement}
 }
 
@@ -404,11 +473,11 @@ func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms 
 	}
 	res.OK = true
 
-	// Gold: two forges, silver on both, identical checks (spec §4).
+	// Gold: two forges, silver on both (derived from signed checks), identical checks and commit (spec §4).
 	var silver []BundleResult
 	forges := map[Forge]bool{}
 	for _, b := range valid {
-		if predicateField(b.Statement, "level") == "silver" {
+		if DeriveStatementLevel(b.Statement) == "silver" {
 			silver = append(silver, b)
 			forges[b.Forge] = true
 		}
@@ -431,12 +500,16 @@ func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms 
 		if a != nil && b != nil {
 			ca, errA := CanonicalJSON(predicateField(a.Statement, "checks"))
 			cb, errB := CanonicalJSON(predicateField(b.Statement, "checks"))
-			same = errA == nil && errB == nil && ca == cb
+			srcA, _ := predicateField(a.Statement, "source").(map[string]any)
+			srcB, _ := predicateField(b.Statement, "source").(map[string]any)
+			commitA, _ := srcA["commit"].(string)
+			commitB, _ := srcB["commit"].(string)
+			same = errA == nil && errB == nil && ca == cb && strings.EqualFold(commitA, commitB)
 		}
 		if same {
 			res.Level = "gold"
 		} else {
-			res.Notes = append(res.Notes, "two forges signed, but their check results differ — not Gold")
+			res.Notes = append(res.Notes, "two forges signed, but their check results or commits differ — not Gold")
 		}
 	}
 	policies := make([][2]string, len(valid))
