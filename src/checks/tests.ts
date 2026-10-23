@@ -29,7 +29,13 @@ export async function runTests(artifact: Artifact, timeoutMs = 10 * 60_000): Pro
   const command = await readTestCommand(artifact);
   if (!command) return { result: "none" };
   const exitCode = await new Promise<number>((resolve) => {
-    const child = spawn(command, { cwd: artifact.root, shell: true, stdio: "inherit", timeout: timeoutMs });
+    const child = spawn(command, {
+      cwd: artifact.root,
+      shell: true,
+      stdio: "inherit",
+      timeout: timeoutMs,
+      env: { ...process.env, PIP_BREAK_SYSTEM_PACKAGES: "1" },
+    });
     child.on("error", () => resolve(127));
     child.on("close", (code) => resolve(code ?? 1));
   });

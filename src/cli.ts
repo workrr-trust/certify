@@ -8,8 +8,9 @@ import { BASELINE_POLICY, type Policy } from "./checks/policy.js";
 import { runTests, type TestsReport } from "./checks/tests.js";
 import { digestArtifact } from "./digest.js";
 import { runOrgPolicyGate, type GateLevel } from "./gate.js";
+import { loadTrustPolicy } from "./policy-loader.js";
 import { DEFAULT_TRUST_POLICY, type TrustPolicy } from "./trust-policy.js";
-import { verificationHeadline, verifyArtifact } from "./verify.js";
+import { computeAnchorHashes, verificationHeadline, verifyArtifact, type AnchorReceipt } from "./verify.js";
 import { VERSION } from "./version.js";
 
 const HELP = `workrr ${VERSION} — certify and verify AI agent artifacts
@@ -20,7 +21,9 @@ Usage:
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
-                        [--source <repo>] [--json]
+                        [--source <repo>] [--offline] [--private] [--json]
+                        [--trusted-root trusted_root.json] [--anchor-receipt receipt.json]
+  workrr anchor  <path> --bundle <file> [--out anchor-request.json]
   workrr gate    <repo-dir> [--min-level banded|silver|gold] [--policy policy.json]
                             [--certificates-dir <dir>] [--source <repo>] [--json]
 
@@ -28,10 +31,23 @@ Usage:
            in CI, use a job WITHOUT signing permission.
   certify  Runs provenance, policy and scan checks; exits 1 if any check fails.
            In GitHub Actions also writes subject-name / subject-digest outputs.
-  verify   Checks the artifact digest, Sigstore signature, Rekor inclusion and
-           certifier identity. Reports the policy name and digest. A policy that
-           is not the baseline does not verify at a baseline level. --source
-           fails when the certificate's publisher repo does not match.
+  verify   Checks the artifact digest, Sigstore signature, Rekor inclusion,
+           certifier identity, and revocation. Reports the policy name and digest.
+           A policy that is not the baseline does not verify at a baseline level.
+           --source fails when the certificate's publisher repo does not match.
+           --json prints the structured VerifyResult JSON (ok, level, artifactDigest,
+           source, policyName, policyDigest, policyStatus, bundles, notes).
+           Fetches the signed trust policy from the trust API and caches it for 1 hour.
+           --offline uses the policy embedded in this build and does not check
+           revocation. It prints:
+             offline: using the embedded trust policy; revocation was not checked
+           A revoked certificate can still verify in that mode. Sigstore's own
+           trust root may still be fetched unless it is already cached.
+           --trust-policy FILE uses that file. A signed blob is verified; a legacy
+           {version, signers} file is a local override and its signature is not checked.
+           --private accepts private-tier TSA attestations and optional hash-only
+           anchor receipts (--anchor-receipt).
+  anchor   Computes the hash-only public anchor request payload for a private bundle.
   gate     Org policy gate: discovers all skills in <repo-dir> and exits 1 if
            any skill is uncertified, fails policy/scan, or is below --min-level.
 `;
@@ -64,7 +80,11 @@ async function main(argv: string[]): Promise<number> {
       "trust-policy": { type: "string" },
       "min-level": { type: "string" },
       "certificates-dir": { type: "string" },
+      "trusted-root": { type: "string" },
+      "anchor-receipt": { type: "string" },
       source: { type: "string" },
+      private: { type: "boolean" },
+      offline: { type: "boolean" },
       json: { type: "boolean" },
     },
   });
@@ -102,7 +122,9 @@ async function main(argv: string[]): Promise<number> {
           `policy     ${c.policy.result} (${c.policy.policyName})`,
           `scan       ${c.scan.result} (${c.scan.findings.length} finding(s), ${c.scan.rulesetVersion})`,
           `tests      ${c.tests.result}`,
-          outcome.certified ? `level      ${p.level}` : `NOT CERTIFIED:\n  - ${outcome.failures.join("\n  - ")}`,
+          outcome.certified
+            ? `level      ${p.level}${p.band ? ` (band ${p.band})` : ""}`
+            : `NOT CERTIFIED:\n  - ${outcome.failures.join("\n  - ")}`,
           "",
         ].join("\n"),
       );
@@ -114,15 +136,47 @@ async function main(argv: string[]): Promise<number> {
       if (process.env.GITHUB_OUTPUT) {
         await appendFile(
           process.env.GITHUB_OUTPUT,
-          `certified=${outcome.certified}\nsubject-name=${statement.subject[0].name}\nsubject-digest=sha256:${statement.subject[0].digest.sha256}\nlevel=${p.level}\n`,
+          `certified=${outcome.certified}\nsubject-name=${statement.subject[0].name}\nsubject-digest=sha256:${statement.subject[0].digest.sha256}\nlevel=${p.level}\nband=${p.band ?? ""}\n`,
         );
       }
       return outcome.certified ? 0 : 1;
     }
     case "verify": {
       if (!values.bundle?.length) throw new Error("verify needs at least one --bundle");
-      const policy = values["trust-policy"] ? await readJson<TrustPolicy>(values["trust-policy"]) : DEFAULT_TRUST_POLICY;
-      const result = await verifyArtifact(path, values.bundle, policy, values.source);
+      const loaded = await loadTrustPolicy({ offline: values.offline, file: values["trust-policy"] });
+      if (loaded.status !== "ok") {
+        const { sha256 } = await digestArtifact(path);
+        const failed = {
+          ok: false,
+          status: loaded.status === "rollback" ? "ROLLBACK" : "rejected",
+          artifactDigest: sha256,
+          bundles: [],
+          notes: loaded.warnings,
+        };
+        if (values.json) process.stdout.write(JSON.stringify(failed, null, 2) + "\n");
+        else {
+          process.stdout.write(`artifact sha256:${sha256}\n`);
+          process.stdout.write(loaded.status === "rollback" ? "ROLLBACK\n" : "NOT VERIFIED\n");
+          for (const n of loaded.warnings) process.stdout.write(`  note: ${n}\n`);
+        }
+        return 1;
+      }
+      const anchorReceipt = values["anchor-receipt"] ? await readJson<AnchorReceipt>(values["anchor-receipt"]) : undefined;
+      const result = await verifyArtifact(path, values.bundle, loaded.policy, {
+        offline: values.offline,
+        expectedSource: values.source,
+        revocations: loaded.revocationChecked ? loaded.revocations : undefined,
+        baselinePolicyDigests: loaded.baselinePolicyDigests,
+        privateMode: values.private,
+        trustedRootPath: values["trusted-root"],
+        anchorReceipt,
+      });
+      if (!values.offline && !loaded.revocationChecked) {
+        result.notes = result.notes.filter((n) => !n.startsWith("revocation is not checked in v0.1"));
+      }
+      for (const warning of loaded.warnings) {
+        if (!result.notes.includes(warning)) result.notes.push(warning);
+      }
       if (values.json) {
         process.stdout.write(JSON.stringify(result, null, 2) + "\n");
       } else {
@@ -134,7 +188,14 @@ async function main(argv: string[]): Promise<number> {
         if (result.policyName || result.policyDigest) {
           process.stdout.write(`  policy ${result.policyName ?? "(unnamed)"}${result.policyDigest ? ` ${result.policyDigest}` : ""}\n`);
         }
-        process.stdout.write(`${verificationHeadline(result)}\n`);
+        if (result.anchor) {
+          process.stdout.write(`  anchor #${result.anchor.sequence} ${result.anchor.chainHash} (${result.anchor.anchoredAt})\n`);
+        }
+        if (result.band) {
+          process.stdout.write(`  band ${result.band}\n`);
+        }
+        const headline = result.status === "REVOKED" ? "REVOKED" : verificationHeadline(result);
+        process.stdout.write(`${headline}\n`);
         for (const n of result.notes) process.stdout.write(`  note: ${n}\n`);
       }
       return result.ok ? 0 : 1;
@@ -169,6 +230,18 @@ async function main(argv: string[]): Promise<number> {
         process.stdout.write(result.ok ? "ORG GATE PASSED\n" : "ORG GATE FAILED\n");
       }
       return result.ok ? 0 : 1;
+    }
+    case "anchor": {
+      if (!values.bundle?.length) throw new Error("anchor needs --bundle <file>");
+      const { sha256: artifactDigest } = await digestArtifact(path);
+      const rawBytes = await readFile(values.bundle[0]);
+      const parsed = JSON.parse(rawBytes.toString("utf8")) as { dsseEnvelope?: unknown };
+      if (!parsed.dsseEnvelope) throw new Error("bundle has no DSSE envelope");
+      const hashes = computeAnchorHashes(rawBytes, parsed.dsseEnvelope, artifactDigest);
+      const out = JSON.stringify(hashes, null, 2) + "\n";
+      if (values.out) await writeFile(values.out, out);
+      else process.stdout.write(out);
+      return 0;
     }
     default:
       throw new Error(`unknown command: ${cmd}\n\n${HELP}`);

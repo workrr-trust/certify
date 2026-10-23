@@ -1,0 +1,68 @@
+# Sign the trust policy with Sigstore keyless signing and upload the bundle.
+# This workflow does not deploy, publish, tag, or write to R2. Shawn uploads
+# the artifact (docs/trust-api.md) after reviewing it.
+#
+# Run it from a release tag (workflow_dispatch → the tag, or a vX.Y.Z push).
+# The verifier accepts only
+#   https://github.com/workrr-trust/certify/.github/workflows/trust-policy.yml@refs/tags/vX.Y.Z
+# A signature from refs/heads/main is rejected.
+name: trust-policy
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions: {}
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Require a release tag
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::sign the trust policy from a release tag, not $GITHUB_REF"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: node scripts/render-trust-policy.mjs policy.json
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign the policy (keyless)
+        run: cosign sign-blob --yes --bundle policy.sigstore.json policy.json
+
+      - name: Verify the signature against this workflow
+        run: |
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/trust-policy.yml@${GITHUB_REF}"
+          cosign verify-blob \
+            --bundle policy.sigstore.json \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            policy.json
+
+      - name: Pack the signed blob
+        run: node scripts/pack-signed-blob.mjs application/vnd.workrr.trust-policy+json policy.json policy.sigstore.json signed-policy.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signed-trust-policy
+          path: |
+            policy.json
+            policy.sigstore.json
+            signed-policy.json
+          if-no-files-found: error

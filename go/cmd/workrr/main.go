@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,7 +21,10 @@ Usage:
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
-                        [--source <repo>] [--json] [--trusted-root trusted_root.json]
+  workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
+                        [--source <repo>] [--offline] [--private] [--json]
+                        [--trusted-root trusted_root.json] [--anchor-receipt receipt.json]
+  workrr anchor  <path> --bundle <file> [--out anchor-request.json]
   workrr gate    <repo-dir> [--min-level banded|silver|gold] [--policy policy.json]
                             [--certificates-dir <dir>] [--source <repo>] [--json]
 
@@ -28,11 +32,23 @@ Usage:
            in CI, use a job WITHOUT signing permission.
   certify  Runs provenance, policy and scan checks; exits 1 if any check fails.
            In GitHub Actions also writes subject-name / subject-digest outputs.
-  verify   Checks the artifact digest, Sigstore signature, Rekor inclusion and
-           certifier identity. Reports the policy name and digest. A policy that
-           is not the baseline does not verify at a baseline level. --source
-           fails when the certificate's publisher repo does not match.
-           --trusted-root pins a Sigstore trusted root instead of fetching it via TUF.
+  verify   Checks the artifact digest, Sigstore signature, Rekor inclusion,
+           certifier identity, and revocation. Reports the policy name and digest.
+           A policy that is not the baseline does not verify at a baseline level.
+           --source fails when the certificate's publisher repo does not match.
+           --json prints the structured VerifyResult JSON (ok, level, artifactDigest,
+           source, policyName, policyDigest, policyStatus, bundles, notes).
+           Fetches the signed trust policy from the trust API and caches it for 1 hour.
+           --offline uses the policy embedded in this build and does not check
+           revocation. It prints:
+             offline: using the embedded trust policy; revocation was not checked
+           A revoked certificate can still verify in that mode. Pass --trusted-root
+           to verify the Sigstore certificate without fetching the Sigstore TUF root.
+           --trust-policy FILE uses that file. A signed blob is verified; a legacy
+           {version, signers} file is a local override and its signature is not checked.
+           --private accepts private-tier TSA attestations and optional hash-only
+           anchor receipts (--anchor-receipt).
+  anchor   Computes the hash-only public anchor request payload for a private bundle.
   gate     Org policy gate: discovers all skills in <repo-dir> and exits 1 if
            any skill is uncertified, fails policy/scan, or is below --min-level.
 `
@@ -44,8 +60,8 @@ type args struct {
 	positions []string
 }
 
-var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "min-level": true, "certificates-dir": true, "source": true}
-var boolOpts = map[string]bool{"run-tests": true, "json": true}
+var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "anchor-receipt": true, "min-level": true, "certificates-dir": true, "source": true}
+var boolOpts = map[string]bool{"run-tests": true, "private": true, "json": true, "offline": true}
 
 // parseArgs follows node:util parseArgs in strict mode: --name value,
 // --name=value, booleans take no value, `--` ends options.
@@ -191,6 +207,9 @@ func run(argv []string) (int, error) {
 			commit = commit[:12]
 		}
 		last := "level      " + p.Level
+		if p.Band != "" {
+			last += " (band " + p.Band + ")"
+		}
 		if !outcome.Certified {
 			last = "NOT CERTIFIED:\n  - " + strings.Join(outcome.Failures, "\n  - ")
 		}
@@ -225,8 +244,8 @@ func run(argv []string) (int, error) {
 			if err != nil {
 				return 0, err
 			}
-			_, err = fmt.Fprintf(f, "certified=%t\nsubject-name=%s\nsubject-digest=sha256:%s\nlevel=%s\n",
-				outcome.Certified, st.Subject[0].Name, st.Subject[0].Digest["sha256"], p.Level)
+			_, err = fmt.Fprintf(f, "certified=%t\nsubject-name=%s\nsubject-digest=sha256:%s\nlevel=%s\nband=%s\n",
+				outcome.Certified, st.Subject[0].Name, st.Subject[0].Digest["sha256"], p.Level, p.Band)
 			f.Close()
 			if err != nil {
 				return 0, err
@@ -241,20 +260,72 @@ func run(argv []string) (int, error) {
 		if len(a.bundles) == 0 {
 			return 0, fmt.Errorf("verify needs at least one --bundle")
 		}
-		policy := certify.DefaultTrustPolicy
-		if p := a.strings["trust-policy"]; p != "" {
-			b, err := os.ReadFile(p)
+		loaded, err := certify.LoadTrustPolicy(certify.LoadOptions{
+			Offline: a.bools["offline"], File: a.strings["trust-policy"], TrustedRoot: a.strings["trusted-root"],
+		})
+		if err != nil {
+			return 0, err
+		}
+		if loaded.Status != "ok" {
+			d, err := certify.DigestArtifact(path)
 			if err != nil {
 				return 0, err
 			}
-			if err := json.Unmarshal(b, &policy); err != nil {
+			status := "rejected"
+			headline := "NOT VERIFIED"
+			if loaded.Status == "rollback" {
+				status = "ROLLBACK"
+				headline = "ROLLBACK"
+			}
+			failed := map[string]any{
+				"ok": false, "status": status, "artifactDigest": d.SHA256,
+				"bundles": []any{}, "notes": loaded.Warnings,
+			}
+			if a.bools["json"] {
+				os.Stdout.Write(prettyJSON(failed))
+			} else {
+				fmt.Printf("artifact sha256:%s\n%s\n", d.SHA256, headline)
+				for _, n := range loaded.Warnings {
+					fmt.Printf("  note: %s\n", n)
+				}
+			}
+			return 1, nil
+		}
+		var anchorReceipt *certify.AnchorReceipt
+		if ar := a.strings["anchor-receipt"]; ar != "" {
+			b, err := os.ReadFile(ar)
+			if err != nil {
 				return 0, err
 			}
+			var r certify.AnchorReceipt
+			if err := json.Unmarshal(b, &r); err != nil {
+				return 0, err
+			}
+			anchorReceipt = &r
 		}
 		tms := &certify.TrustedMaterialSource{Path: a.strings["trusted-root"]}
-		result, err := certify.VerifyArtifact(path, a.bundles, &policy, tms, a.strings["source"])
+		result, err := certify.VerifyArtifact(path, a.bundles, &loaded.Policy, tms, certify.VerifyOptions{
+			Revocations: loaded.Revocations, CheckRevocation: loaded.RevocationChecked && !a.bools["offline"],
+			Offline: a.bools["offline"], BaselinePolicyDigests: loaded.BaselinePolicyDigests,
+			ExpectedSource: a.strings["source"], PrivateMode: a.bools["private"],
+			AnchorReceipt: anchorReceipt,
+		})
 		if err != nil {
 			return 0, err
+		}
+		if !a.bools["offline"] && !loaded.RevocationChecked {
+			filtered := result.Notes[:0]
+			for _, n := range result.Notes {
+				if !strings.HasPrefix(n, "revocation is not checked in v0.1") {
+					filtered = append(filtered, n)
+				}
+			}
+			result.Notes = filtered
+		}
+		for _, w := range loaded.Warnings {
+			if !slices.Contains(result.Notes, w) {
+				result.Notes = append(result.Notes, w)
+			}
 		}
 		if a.bools["json"] {
 			os.Stdout.Write(prettyJSON(result))
@@ -281,7 +352,17 @@ func run(argv []string) (int, error) {
 					fmt.Printf("  policy %s\n", name)
 				}
 			}
-			fmt.Println(certify.VerificationHeadline(result.OK, result.Level, result.PolicyStatus, result.Notes))
+			if result.Anchor != nil {
+				fmt.Printf("  anchor #%d %s (%s)\n", result.Anchor.Sequence, result.Anchor.ChainHash, result.Anchor.AnchoredAt)
+			}
+			if result.Band != "" {
+				fmt.Printf("  band %s\n", result.Band)
+			}
+			if result.Status == "REVOKED" {
+				fmt.Println("REVOKED")
+			} else {
+				fmt.Println(certify.VerificationHeadline(result.OK, result.Level, result.PolicyStatus, result.Notes, result.Band))
+			}
 			for _, n := range result.Notes {
 				fmt.Printf("  note: %s\n", n)
 			}
@@ -355,6 +436,40 @@ func run(argv []string) (int, error) {
 			return 0, nil
 		}
 		return 1, nil
+
+	case "anchor":
+		if len(a.bundles) == 0 {
+			return 0, fmt.Errorf("anchor needs --bundle <file>")
+		}
+		d, err := certify.DigestArtifact(path)
+		if err != nil {
+			return 0, err
+		}
+		rawBytes, err := os.ReadFile(a.bundles[0])
+		if err != nil {
+			return 0, err
+		}
+		genericBundle, err := certify.DecodeJSON(rawBytes)
+		if err != nil {
+			return 0, err
+		}
+		bm, _ := genericBundle.(map[string]any)
+		if bm["dsseEnvelope"] == nil {
+			return 0, fmt.Errorf("bundle has no DSSE envelope")
+		}
+		hashes, err := certify.ComputeAnchorHashes(rawBytes, bm["dsseEnvelope"], d.SHA256)
+		if err != nil {
+			return 0, err
+		}
+		out := prettyJSON(hashes)
+		if p := a.strings["out"]; p != "" {
+			if err := os.WriteFile(p, out, 0o644); err != nil {
+				return 0, err
+			}
+		} else {
+			os.Stdout.Write(out)
+		}
+		return 0, nil
 	}
 	return 0, fmt.Errorf("unknown command: %s\n\n%s", cmd, help)
 }
