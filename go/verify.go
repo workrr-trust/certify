@@ -121,6 +121,16 @@ func canonicalSource(uri string) string {
 	return strings.ToLower(strings.TrimRight(NormalizeRepoURI(strings.TrimSpace(uri)), "/"))
 }
 
+var forgePublisherRe = regexp.MustCompile(`^https://(?:github\.com|gitlab\.com)/([^/]+/[^/]+)$`)
+
+func publisherKey(uri string) string {
+	c := canonicalSource(uri)
+	if m := forgePublisherRe.FindStringSubmatch(c); len(m) == 2 {
+		return m[1]
+	}
+	return c
+}
+
 // SourceMatches reports whether expected names the certificate's repository.
 // expected may be a full repository URL or an owner/repo (or host/owner/repo) shorthand.
 func SourceMatches(certificateURI, expected string) bool {
@@ -143,6 +153,88 @@ func SourceMatches(certificateURI, expected string) bool {
 		}
 	}
 	return path == flag
+}
+
+func DeriveStatementLevel(statement any) string {
+	checks, _ := predicateField(statement, "checks").(map[string]any)
+	if checks == nil {
+		return ""
+	}
+	checkResult := func(name string) string {
+		m, _ := checks[name].(map[string]any)
+		r, _ := m["result"].(string)
+		return r
+	}
+	if checkResult("provenance") != "pass" || checkResult("policy") != "pass" || checkResult("scan") != "pass" {
+		return ""
+	}
+	switch checkResult("tests") {
+	case "pass":
+		return "silver"
+	case "none":
+		return "banded"
+	default:
+		return ""
+	}
+}
+
+func predicateCommitAndPath(statement any) (commit, path string) {
+	src, _ := predicateField(statement, "source").(map[string]any)
+	commit, _ = src["commit"].(string)
+	path, _ = src["path"].(string)
+	return strings.ToLower(commit), path
+}
+
+func EvaluateGoldBundles(valid []BundleResult, notes []string) (level string, outNotes []string) {
+	outNotes = append([]string{}, notes...)
+	var silver []BundleResult
+	var anyValid bool
+	forges := map[Forge]bool{}
+	for _, b := range valid {
+		lvl := DeriveStatementLevel(b.Statement)
+		if lvl == "" {
+			continue
+		}
+		anyValid = true
+		if lvl == "silver" {
+			silver = append(silver, b)
+			forges[b.Forge] = true
+		}
+	}
+	if !anyValid {
+		return "", outNotes
+	}
+	level = "banded"
+	if len(silver) > 0 {
+		level = "silver"
+	}
+	if len(forges) >= 2 {
+		find := func(f Forge) *BundleResult {
+			for i := range silver {
+				if silver[i].Forge == f {
+					return &silver[i]
+				}
+			}
+			return nil
+		}
+		a, b := find(ForgeGitHub), find(ForgeGitLab)
+		if a != nil && b != nil {
+			commitA, pathA := predicateCommitAndPath(a.Statement)
+			commitB, pathB := predicateCommitAndPath(b.Statement)
+			sameCommit := commitA != "" && commitA == commitB && pathA == pathB
+			ca, errA := CanonicalJSON(predicateField(a.Statement, "checks"))
+			cb, errB := CanonicalJSON(predicateField(b.Statement, "checks"))
+			sameChecks := errA == nil && errB == nil && ca == cb
+			if !sameCommit {
+				outNotes = append(outNotes, "two forges signed, but their source commits differ — not Gold")
+			} else if !sameChecks {
+				outNotes = append(outNotes, "two forges signed, but their check results differ — not Gold")
+			} else {
+				level = "gold"
+			}
+		}
+	}
+	return level, outNotes
 }
 
 func worstStatus(statuses []string) string {
@@ -214,8 +306,13 @@ func ApplyVerificationGates(level string, policies [][2]string, sources []string
 		policyName, policyDigest = assessments[0][1], assessments[0][2]
 	}
 	uniqueSources := uniqueNonEmpty(sources)
+	var pubKeys []string
+	for _, s := range uniqueSources {
+		pubKeys = append(pubKeys, publisherKey(s))
+	}
+	uniquePublishers := uniqueNonEmpty(pubKeys)
 	source := ""
-	if len(uniqueSources) == 1 {
+	if len(uniquePublishers) == 1 && len(uniqueSources) > 0 {
 		source = uniqueSources[0]
 	}
 	digestSeen := map[string]bool{}
@@ -229,7 +326,7 @@ func ApplyVerificationGates(level string, policies [][2]string, sources []string
 	if len(digests) > 1 {
 		outNotes = append(outNotes, "policy digests differ: "+strings.Join(digests, ", "))
 	}
-	if len(uniqueSources) > 1 {
+	if len(uniquePublishers) > 1 {
 		outNotes = append(outNotes, "publishers differ: "+strings.Join(uniqueSources, ", "))
 	}
 	if expectedSource != "" {
@@ -237,13 +334,18 @@ func ApplyVerificationGates(level string, policies [][2]string, sources []string
 		if len(urls) == 0 {
 			urls = []string{""}
 		}
-		for _, uri := range urls {
-			if !SourceMatches(uri, expectedSource) {
-				shown := uri
-				if shown == "" {
-					shown = "(none)"
+		crossForgeSamePublisher := len(uniquePublishers) == 1 && len(uniqueSources) > 1 && slices.ContainsFunc(urls, func(u string) bool {
+			return SourceMatches(u, expectedSource)
+		})
+		if !crossForgeSamePublisher {
+			for _, uri := range urls {
+				if !SourceMatches(uri, expectedSource) {
+					shown := uri
+					if shown == "" {
+						shown = "(none)"
+					}
+					outNotes = append(outNotes, "source mismatch: certificate is for "+shown+", --source is "+expectedSource)
 				}
-				outNotes = append(outNotes, "source mismatch: certificate is for "+shown+", --source is "+expectedSource)
 			}
 		}
 	}
@@ -319,30 +421,6 @@ func VerifySigstore(b *bundle.Bundle, tm root.TrustedMaterial, digestAlg string,
 		SourceRepositoryURI:    c.Extensions.SourceRepositoryURI,
 		SourceRepositoryDigest: c.Extensions.SourceRepositoryDigest,
 	}, nil
-}
-
-// DeriveStatementLevel computes the certified level from the signed checks
-// rather than trusting predicate.level alone.
-func DeriveStatementLevel(statement any) string {
-	checks, _ := predicateField(statement, "checks").(map[string]any)
-	if checks == nil {
-		return ""
-	}
-	resOf := func(k string) string {
-		m, _ := checks[k].(map[string]any)
-		r, _ := m["result"].(string)
-		return r
-	}
-	if resOf("provenance") != "pass" || resOf("policy") != "pass" || resOf("scan") != "pass" {
-		return ""
-	}
-	switch resOf("tests") {
-	case "pass":
-		return "silver"
-	case "none":
-		return "banded"
-	}
-	return ""
 }
 
 // CheckCertificateSourceAndCommit compares the predicate's source URI and commit
@@ -551,44 +629,11 @@ func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms 
 	res.OK = true
 	res.Status = "verified"
 
-	// Gold: two forges, silver on both (derived from signed checks), identical checks and commit (spec §4).
-	var silver []BundleResult
-	forges := map[Forge]bool{}
-	for _, b := range valid {
-		if DeriveStatementLevel(b.Statement) == "silver" {
-			silver = append(silver, b)
-			forges[b.Forge] = true
-		}
-	}
-	res.Level = "banded"
-	if len(silver) > 0 {
-		res.Level = "silver"
-	}
-	if len(forges) >= 2 {
-		find := func(f Forge) *BundleResult {
-			for i := range silver {
-				if silver[i].Forge == f {
-					return &silver[i]
-				}
-			}
-			return nil
-		}
-		a, b := find(ForgeGitHub), find(ForgeGitLab)
-		same := false
-		if a != nil && b != nil {
-			ca, errA := CanonicalJSON(predicateField(a.Statement, "checks"))
-			cb, errB := CanonicalJSON(predicateField(b.Statement, "checks"))
-			srcA, _ := predicateField(a.Statement, "source").(map[string]any)
-			srcB, _ := predicateField(b.Statement, "source").(map[string]any)
-			commitA, _ := srcA["commit"].(string)
-			commitB, _ := srcB["commit"].(string)
-			same = errA == nil && errB == nil && ca == cb && strings.EqualFold(commitA, commitB)
-		}
-		if same {
-			res.Level = "gold"
-		} else {
-			res.Notes = append(res.Notes, "two forges signed, but their check results or commits differ — not Gold")
-		}
+	res.Level, res.Notes = EvaluateGoldBundles(valid, res.Notes)
+	if res.Level == "" {
+		res.OK = false
+		res.Status = "rejected"
+		return res, nil
 	}
 	policies := make([][2]string, len(valid))
 	sources := make([]string, len(valid))

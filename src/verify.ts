@@ -193,6 +193,12 @@ export function canonicalSource(uri: string): string {
   return normalizeRepoUri(uri.trim()).replace(/\/+$/, "").toLowerCase();
 }
 
+function publisherKey(uri: string): string {
+  const c = canonicalSource(uri);
+  const m = /^https:\/\/(?:github\.com|gitlab\.com)\/([^/]+\/[^/]+)$/.exec(c);
+  return m ? m[1] : c;
+}
+
 // expected may be a full repository URL or an owner/repo (or host/owner/repo) shorthand.
 export function sourceMatches(certificateURI: string, expected: string): boolean {
   const got = canonicalSource(certificateURI);
@@ -202,6 +208,38 @@ export function sourceMatches(certificateURI: string, expected: string): boolean
   if (flag.includes("://") || flag.startsWith("git@")) return false;
   if (got === `https://${flag}`) return true;
   return got.replace(/^https?:\/\/[^/]+\//, "") === flag;
+}
+
+export function evaluateGoldBundles(
+  valid: BundleResult[],
+  notes: string[],
+): { level?: "gold" | "silver" | "banded"; notes: string[] } {
+  const outNotes = [...notes];
+  const withLevels = valid
+    .map((b) => ({ bundle: b, level: deriveStatementLevel(b.statement) }))
+    .filter((x): x is { bundle: BundleResult; level: "silver" | "banded" } => x.level !== undefined);
+  if (withLevels.length === 0) return { notes: outNotes };
+
+  const silver = withLevels.filter((x) => x.level === "silver").map((x) => x.bundle);
+  const forges = new Set(silver.map((b) => b.forge));
+  let level: VerifyResult["level"] = silver.length > 0 ? "silver" : "banded";
+  if (forges.size >= 2) {
+    const [a, b] = [silver.find((x) => x.forge === "github"), silver.find((x) => x.forge === "gitlab")];
+    if (a?.statement && b?.statement) {
+      const sameCommit =
+        a.statement.predicate.source.commit.toLowerCase() === b.statement.predicate.source.commit.toLowerCase() &&
+        a.statement.predicate.source.path === b.statement.predicate.source.path;
+      const sameChecks = canonicalJson(a.statement.predicate.checks) === canonicalJson(b.statement.predicate.checks);
+      if (!sameCommit) {
+        outNotes.push("two forges signed, but their source commits differ — not Gold");
+      } else if (!sameChecks) {
+        outNotes.push("two forges signed, but their check results differ — not Gold");
+      } else {
+        level = "gold";
+      }
+    }
+  }
+  return { level, notes: outNotes };
 }
 
 export function verificationHeadline(r: { ok: boolean; level?: string; band?: TrustBand; policyStatus?: PolicyStatus; notes: string[] }): string {
@@ -235,15 +273,20 @@ export function applyVerificationGates(input: {
   const status = assessments.length ? worstStatus(assessments.map((a) => a.status)) : undefined;
   const first = assessments[0];
   const uniqueSources = [...new Set(input.sources.filter((s) => s))];
-  const source = uniqueSources.length === 1 ? uniqueSources[0] : undefined;
+  const uniquePublishers = [...new Set(uniqueSources.map((s) => publisherKey(s)))];
+  const source = uniquePublishers.length === 1 ? uniqueSources[0] : undefined;
   const digests = [...new Set(assessments.map((a) => a.policyDigest).filter((d): d is string => !!d))];
   if (digests.length > 1) notes.push(`policy digests differ: ${digests.join(", ")}`);
-  if (uniqueSources.length > 1) notes.push(`publishers differ: ${uniqueSources.join(", ")}`);
+  if (uniquePublishers.length > 1) notes.push(`publishers differ: ${uniqueSources.join(", ")}`);
   if (input.expectedSource) {
     const urls = input.sources.length ? input.sources : [""];
-    for (const uri of urls) {
-      if (!sourceMatches(uri, input.expectedSource)) {
-        notes.push(`source mismatch: certificate is for ${uri || "(none)"}, --source is ${input.expectedSource}`);
+    const crossForgeSamePublisher =
+      uniquePublishers.length === 1 && uniqueSources.length > 1 && urls.some((u) => sourceMatches(u, input.expectedSource!));
+    if (!crossForgeSamePublisher) {
+      for (const uri of urls) {
+        if (!sourceMatches(uri, input.expectedSource)) {
+          notes.push(`source mismatch: certificate is for ${uri || "(none)"}, --source is ${input.expectedSource}`);
+        }
       }
     }
   }
@@ -387,31 +430,16 @@ export async function verifyArtifact(
     return { ok: false, status: revoked ? "REVOKED" : "rejected", artifactDigest, bundles, notes };
   }
 
-  // Gold: two forges, silver on both (derived from signed checks), identical checks and commit (spec §4).
-  const silver = valid.filter((b) => deriveStatementLevel(b.statement) === "silver");
-  const forges = new Set(silver.map((b) => b.forge));
-  let level: VerifyResult["level"] = silver.length > 0 ? "silver" : "banded";
-  if (forges.size >= 2) {
-    const [a, b] = [silver.find((x) => x.forge === "github"), silver.find((x) => x.forge === "gitlab")];
-    if (
-      a &&
-      b &&
-      canonicalJson(a.statement!.predicate.checks) === canonicalJson(b.statement!.predicate.checks) &&
-      a.statement!.predicate.source.commit.toLowerCase() === b.statement!.predicate.source.commit.toLowerCase()
-    ) {
-      level = "gold";
-    } else {
-      notes.push("two forges signed, but their check results or commits differ — not Gold");
-    }
-  }
-  const band = level === "banded" ? valid.find((b) => b.statement?.predicate.band)?.statement?.predicate.band : undefined;
+  const evaluated = evaluateGoldBundles(valid, notes);
+  if (!evaluated.level) return { ok: false, status: "rejected", artifactDigest, bundles, notes: evaluated.notes };
+  const band = evaluated.level === "banded" ? valid.find((b) => b.statement?.predicate.band)?.statement?.predicate.band : undefined;
   const gated = applyVerificationGates({
-    level,
+    level: evaluated.level,
     band,
     policies: valid.map((b) => policyOf(b.statement)),
     sources: valid.map((b) => b.statement?.predicate.source.uri ?? ""),
     expectedSource: options.expectedSource,
-    notes,
+    notes: evaluated.notes,
   });
   return { artifactDigest, bundles, status: gated.ok ? "verified" : "rejected", ...gated };
 }
