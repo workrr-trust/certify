@@ -20,6 +20,7 @@ const THIRD_PARTY = new Set([
   "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
   "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
   "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+  "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
   "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
   "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
   "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
