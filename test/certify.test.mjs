@@ -14,6 +14,7 @@ import { scanArtifact, scanText } from "../dist/checks/scan.js";
 import { runTests } from "../dist/checks/tests.js";
 import { canonicalJson, digestArtifact, sha256Hex } from "../dist/digest.js";
 import { normalizeRepoUri } from "../dist/checks/provenance.js";
+import { checkCertificateSourceAndCommit, deriveStatementLevel } from "../dist/verify.js";
 import registryWorker from "../services/registry/src/index.ts";
 
 const exec = promisify(execFile);
@@ -178,6 +179,61 @@ test("reserved baseline name cannot certify payload.exe as silver", async () => 
 test("normalizes git remotes", () => {
   assert.equal(normalizeRepoUri("git@github.com:workrr-trust/certify.git"), "https://github.com/workrr-trust/certify");
   assert.equal(normalizeRepoUri("https://token@github.com/a/b.git"), "https://github.com/a/b");
+});
+
+test("derives level from signed checks and cross-checks source repo and commit", () => {
+  const baseStmt = {
+    _type: "https://in-toto.io/Statement/v1",
+    subject: [{ name: "csv-summary", digest: { sha256: "91cf3310705a521728b52c44f5e62df49767895e73eb0990d5ea739c7df8c884" } }],
+    predicateType: "https://trust.workrr.ai/certificate/v0.1",
+    predicate: {
+      artifact: { name: "csv-summary", type: "skill", digestAlgorithm: "workrr-dirhash-v1", fileCount: 3 },
+      source: { uri: "https://github.com/workrr-trust/sample-skills", commit: "f49cf2d1c274382e777eb85e0d91c044c63a5c36", path: "skills/csv-summary" },
+      checks: {
+        provenance: { result: "pass", unchangedFromCommit: true },
+        policy: { result: "pass", policyName: "workrr-baseline-v0.1", policyDigest: "sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19", violations: [] },
+        scan: { result: "pass", rulesetVersion: "workrr-scan-v0.1", rulesetDigest: "sha256:8fb0dfd627a3267c6db657f3d4b27dd5e00709ae0ed2a2c98c3d649a01349ad9", findings: [] },
+        tests: { result: "pass", command: "node check.cjs", exitCode: 0 },
+      },
+      level: "silver",
+      certifier: { name: "workrr-certify", version: "0.1.1", runtime: "github-actions" },
+      certifiedAt: "2026-10-20T04:33:52.778Z",
+    },
+  };
+  assert.equal(deriveStatementLevel(baseStmt), "silver");
+  const noTests = structuredClone(baseStmt);
+  noTests.predicate.checks.tests = { result: "none" };
+  assert.equal(deriveStatementLevel(noTests), "banded");
+  const failedScan = structuredClone(baseStmt);
+  failedScan.predicate.checks.scan.result = "fail";
+  assert.equal(deriveStatementLevel(failedScan), undefined);
+
+  // Matching Fulcio extensions (as in sample-skills certificates #1-#3)
+  assert.equal(
+    checkCertificateSourceAndCommit(baseStmt, {
+      sourceRepositoryURI: "https://github.com/workrr-trust/sample-skills",
+      sourceRepositoryDigest: "f49cf2d1c274382e777eb85e0d91c044c63a5c36",
+    }),
+    undefined,
+  );
+  // Old or offline certificates without .1.12/.1.13 still pass
+  assert.equal(checkCertificateSourceAndCommit(baseStmt, {}), undefined);
+  // Mismatched commit is rejected
+  assert.match(
+    checkCertificateSourceAndCommit(baseStmt, {
+      sourceRepositoryURI: "https://github.com/workrr-trust/sample-skills",
+      sourceRepositoryDigest: "0000000000000000000000000000000000000000",
+    }) ?? "",
+    /commit mismatch/,
+  );
+  // Mismatched source repo URI is rejected
+  assert.match(
+    checkCertificateSourceAndCommit(baseStmt, {
+      sourceRepositoryURI: "https://github.com/evil/other",
+      sourceRepositoryDigest: "f49cf2d1c274382e777eb85e0d91c044c63a5c36",
+    }) ?? "",
+    /URI mismatch/,
+  );
 });
 
 test("computes deterministic A-E trust bands for banded artifacts", async () => {
@@ -425,4 +481,5 @@ test("registry Worker manages verified publishers, R2 bundles, and hash-chained 
   const tamperedBody = await tamperedResp.json();
   assert.equal(tamperedBody.ok, false);
   assert.match(tamperedBody.error, /payload_hash mismatch at sequence 1/);
+>>>>>>> origin/main
 });

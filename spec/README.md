@@ -113,7 +113,12 @@ A verifier must:
    A SAN of `refs/heads/main`, an unlisted tag, or a digest other than the one pinned
    for that tag is rejected. The policy embedded in this build lists only
    `certify.yml@refs/tags/v0.1.0` and `v0.1.1`.
-5. Read `checks.policy.policyName` and `checks.policy.policyDigest` and report both.
+5. Cross-check `source.uri` and `source.commit` in the predicate against the signing
+   certificate's Fulcio `SourceRepositoryURI` (`1.3.6.1.4.1.57264.1.12`) and
+   `SourceRepositoryDigest` (`1.3.6.1.4.1.57264.1.13`) extensions when present, and
+   derive the certified level (`silver` or `banded`) directly from the signed `checks`
+   results rather than trusting `predicate.level` alone.
+6. Read `checks.policy.policyName` and `checks.policy.policyDigest` and report both.
    The name `workrr-baseline-v0.1` is reserved: that name with any other digest is
    rejected. Any other digest is not a baseline result, and the verifier must not
    report `silver`, `gold`, or `banded` for it. A signed trust policy's

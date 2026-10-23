@@ -10,6 +10,8 @@ import { baselineRejected, OFFLINE_WARNING, revocationError, type RevocationEntr
 import { DEFAULT_TRUST_POLICY, type AcceptedSigner, type Forge, type TrustPolicy } from "./trust-policy.js";
 
 const OID_BUILD_SIGNER_DIGEST = "1.3.6.1.4.1.57264.1.10";
+const OID_SOURCE_REPOSITORY_URI = "1.3.6.1.4.1.57264.1.12";
+const OID_SOURCE_REPOSITORY_DIGEST = "1.3.6.1.4.1.57264.1.13";
 
 export type BundleResult = {
   bundlePath: string;
@@ -79,13 +81,56 @@ function derUtf8(value: Buffer): string {
 
 type Identity = { subjectAlternativeName?: string; extensions?: { issuer?: string }; oids?: Oid[] };
 
-export function describeSigner(identity: Identity): { san: string; issuer?: string; buildSignerDigest?: string } {
-  const bsd = identity.oids?.find((o) => o.oid?.id?.join(".") === OID_BUILD_SIGNER_DIGEST);
+export type DescribedSigner = {
+  san: string;
+  issuer?: string;
+  buildSignerDigest?: string;
+  sourceRepositoryURI?: string;
+  sourceRepositoryDigest?: string;
+};
+
+export function describeSigner(identity: Identity): DescribedSigner {
+  const findOid = (oid: string): string | undefined => {
+    const found = identity.oids?.find((o) => o.oid?.id?.join(".") === oid);
+    return found ? derUtf8(found.value) : undefined;
+  };
   return {
     san: identity.subjectAlternativeName ?? "",
     issuer: identity.extensions?.issuer,
-    buildSignerDigest: bsd ? derUtf8(bsd.value) : undefined,
+    buildSignerDigest: findOid(OID_BUILD_SIGNER_DIGEST),
+    sourceRepositoryURI: findOid(OID_SOURCE_REPOSITORY_URI),
+    sourceRepositoryDigest: findOid(OID_SOURCE_REPOSITORY_DIGEST),
   };
+}
+
+// Derive the certified level from the signed checks rather than trusting predicate.level alone.
+export function deriveStatementLevel(statement: Statement | undefined): "silver" | "banded" | undefined {
+  const p = statement?.predicate;
+  const c = p?.checks;
+  if (!p || !c) return undefined;
+  if (c.provenance?.result !== "pass" || c.policy?.result !== "pass" || c.scan?.result !== "pass") {
+    return undefined;
+  }
+  if (c.tests?.result === "pass") return "silver";
+  if (c.tests?.result === "none") return "banded";
+  return undefined;
+}
+
+// Compare the predicate's source URI and commit against the signing certificate's
+// Fulcio SourceRepositoryURI (.1.12) and SourceRepositoryDigest (.1.13) when present.
+export function checkCertificateSourceAndCommit(
+  statement: Statement | undefined,
+  signer: { sourceRepositoryURI?: string; sourceRepositoryDigest?: string },
+): string | undefined {
+  const src = statement?.predicate?.source;
+  if (!src) return "statement has no source field";
+  if (signer.sourceRepositoryURI && canonicalSource(src.uri) !== canonicalSource(signer.sourceRepositoryURI)) {
+    return `certificate source URI mismatch: predicate claims ${src.uri}, Fulcio certificate recorded ${signer.sourceRepositoryURI}`;
+  }
+  if (signer.sourceRepositoryDigest && src.commit.toLowerCase() !== signer.sourceRepositoryDigest.toLowerCase()) {
+    return `certificate source commit mismatch: predicate claims ${src.commit}, Fulcio certificate recorded ${signer.sourceRepositoryDigest}`;
+  }
+  return undefined;
 }
 
 export function matchDescribedSigner(
@@ -268,10 +313,34 @@ export async function verifyBundle(bundlePath: string, artifactDigest: string, p
     return withLog(fail(`signature verification failed: ${(e as Error).message}`, { statement }));
   }
   const identity = (signer.identity ?? {}) as Identity;
-  const accepted = matchSigner(policy, identity);
+  const described = describeSigner(identity);
+  const accepted = matchDescribedSigner(policy, described);
   if (!accepted) {
     return withLog(fail(`signer is not an accepted workrr certifier: ${identity.subjectAlternativeName ?? "unknown"}`, {
       statement,
+      signerIdentity: identity.subjectAlternativeName,
+    }));
+  }
+  const sourceMismatch = checkCertificateSourceAndCommit(statement, described);
+  if (sourceMismatch) {
+    return withLog(fail(sourceMismatch, {
+      statement,
+      forge: accepted.forge,
+      signerIdentity: identity.subjectAlternativeName,
+    }));
+  }
+  const derivedLevel = deriveStatementLevel(statement);
+  if (!derivedLevel) {
+    return withLog(fail("certificate checks did not pass", {
+      statement,
+      forge: accepted.forge,
+      signerIdentity: identity.subjectAlternativeName,
+    }));
+  }
+  if (statement.predicate.level === "silver" && derivedLevel !== "silver") {
+    return withLog(fail("certificate claims level silver, but signed checks do not support silver", {
+      statement,
+      forge: accepted.forge,
       signerIdentity: identity.subjectAlternativeName,
     }));
   }
@@ -318,16 +387,21 @@ export async function verifyArtifact(
     return { ok: false, status: revoked ? "REVOKED" : "rejected", artifactDigest, bundles, notes };
   }
 
-  // Gold: two forges, silver on both, identical checks (spec §4).
-  const silver = valid.filter((b) => b.statement?.predicate.level === "silver");
+  // Gold: two forges, silver on both (derived from signed checks), identical checks and commit (spec §4).
+  const silver = valid.filter((b) => deriveStatementLevel(b.statement) === "silver");
   const forges = new Set(silver.map((b) => b.forge));
-  let level: VerifyResult["level"] = valid.some((b) => b.statement?.predicate.level === "silver") ? "silver" : "banded";
+  let level: VerifyResult["level"] = silver.length > 0 ? "silver" : "banded";
   if (forges.size >= 2) {
     const [a, b] = [silver.find((x) => x.forge === "github"), silver.find((x) => x.forge === "gitlab")];
-    if (a && b && canonicalJson(a.statement!.predicate.checks) === canonicalJson(b.statement!.predicate.checks)) {
+    if (
+      a &&
+      b &&
+      canonicalJson(a.statement!.predicate.checks) === canonicalJson(b.statement!.predicate.checks) &&
+      a.statement!.predicate.source.commit.toLowerCase() === b.statement!.predicate.source.commit.toLowerCase()
+    ) {
       level = "gold";
     } else {
-      notes.push("two forges signed, but their check results differ — not Gold");
+      notes.push("two forges signed, but their check results or commits differ — not Gold");
     }
   }
   const band = level === "banded" ? valid.find((b) => b.statement?.predicate.band)?.statement?.predicate.band : undefined;

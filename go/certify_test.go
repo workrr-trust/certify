@@ -317,6 +317,49 @@ func TestReservedBaselineNameDoesNotReachSilver(t *testing.T) {
 	}
 }
 
+func TestDeriveLevelAndCommitCrossCheck(t *testing.T) {
+	stmt := map[string]any{
+		"predicate": map[string]any{
+			"source": map[string]any{
+				"uri":    "https://github.com/workrr-trust/sample-skills",
+				"commit": "f49cf2d1c274382e777eb85e0d91c044c63a5c36",
+				"path":   "skills/csv-summary",
+			},
+			"checks": map[string]any{
+				"provenance": map[string]any{"result": "pass"},
+				"policy":     map[string]any{"result": "pass"},
+				"scan":       map[string]any{"result": "pass"},
+				"tests":      map[string]any{"result": "pass"},
+			},
+			"level": "silver",
+		},
+	}
+	if got := DeriveStatementLevel(stmt); got != "silver" {
+		t.Fatalf("got %q, want silver", got)
+	}
+	if errMsg := CheckCertificateSourceAndCommit(stmt, &Signer{
+		SourceRepositoryURI:    "https://github.com/workrr-trust/sample-skills",
+		SourceRepositoryDigest: "f49cf2d1c274382e777eb85e0d91c044c63a5c36",
+	}); errMsg != "" {
+		t.Fatalf("unexpected mismatch: %s", errMsg)
+	}
+	if errMsg := CheckCertificateSourceAndCommit(stmt, &Signer{}); errMsg != "" {
+		t.Fatalf("old certificate without extensions rejected: %s", errMsg)
+	}
+	if errMsg := CheckCertificateSourceAndCommit(stmt, &Signer{
+		SourceRepositoryURI:    "https://github.com/workrr-trust/sample-skills",
+		SourceRepositoryDigest: "0000000000000000000000000000000000000000",
+	}); !strings.Contains(errMsg, "commit mismatch") {
+		t.Fatalf("expected commit mismatch, got %q", errMsg)
+	}
+	if errMsg := CheckCertificateSourceAndCommit(stmt, &Signer{
+		SourceRepositoryURI:    "https://github.com/evil/other",
+		SourceRepositoryDigest: "f49cf2d1c274382e777eb85e0d91c044c63a5c36",
+	}); !strings.Contains(errMsg, "URI mismatch") {
+		t.Fatalf("expected URI mismatch, got %q", errMsg)
+	}
+}
+
 func TestMatchSigner(t *testing.T) {
 	const tagV010 = "9fbe3e453cbd80bef0301f08db79408bb12c7d64"
 	gh := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.0", Issuer: "https://token.actions.githubusercontent.com", BuildSignerDigest: tagV010}
