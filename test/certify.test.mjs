@@ -763,5 +763,4 @@ test("registry Worker manages verified publishers, R2 bundles, and hash-chained 
   const tamperedBody = await tamperedResp.json();
   assert.equal(tamperedBody.ok, false);
   assert.match(tamperedBody.error, /payload_hash mismatch at sequence 1/);
->>>>>>> origin/main
 });
