@@ -6,6 +6,7 @@ import { PREDICATE_TYPE, type Statement } from "./certify.js";
 import { BASELINE_POLICY, BASELINE_POLICY_NAME } from "./checks/policy.js";
 import { normalizeRepoUri } from "./checks/provenance.js";
 import { canonicalJson, digestArtifact, jsonDigest } from "./digest.js";
+import { baselineRejected, OFFLINE_WARNING, revocationError, type RevocationEntry } from "./trust-feed.js";
 import { DEFAULT_TRUST_POLICY, type AcceptedSigner, type Forge, type TrustPolicy } from "./trust-policy.js";
 
 const OID_BUILD_SIGNER_DIGEST = "1.3.6.1.4.1.57264.1.10";
@@ -17,12 +18,16 @@ export type BundleResult = {
   forge?: Forge;
   signerIdentity?: string;
   statement?: Statement;
+  /** Rekor log indexes carried in the bundle. Revocation entries name one of these. */
+  logIndexes?: string[];
 };
 
 export type PolicyStatus = "baseline" | "custom" | "reject";
+export type VerifyStatus = "verified" | "REVOKED" | "rejected";
 
 export type VerifyResult = {
   ok: boolean;
+  status: VerifyStatus;
   level?: "gold" | "silver" | "banded";
   artifactDigest: string;
   source?: string;
@@ -41,6 +46,16 @@ export type VerificationGate = {
   policyDigest?: string;
   policyStatus?: PolicyStatus;
   notes: string[];
+};
+
+export type VerifyOptions = {
+  /** When set, revocation entries are enforced. Omit to keep the v0.1 note. */
+  revocations?: readonly RevocationEntry[];
+  offline?: boolean;
+  /** Digests from a signed trust policy. Enforced only when provided. */
+  baselinePolicyDigests?: Record<string, string>;
+  /** Publisher repository. A mismatch fails closed and is not a baseline result. */
+  expectedSource?: string;
 };
 
 type SerializedBundle = Parameters<typeof sigstoreVerify>[0];
@@ -195,27 +210,41 @@ export function applyVerificationGates(input: {
   return { ok: false, ...base };
 }
 
+export function bundleLogIndexes(bundle: unknown): string[] {
+  const entries = (bundle as { verificationMaterial?: { tlogEntries?: { logIndex?: unknown }[] } })?.verificationMaterial?.tlogEntries;
+  if (!Array.isArray(entries)) return [];
+  const out: string[] = [];
+  for (const entry of entries) {
+    const value = entry?.logIndex;
+    if (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value)) out.push(value);
+  }
+  return out;
+}
+
 export async function verifyBundle(bundlePath: string, artifactDigest: string, policy: TrustPolicy): Promise<BundleResult> {
   const fail = (error: string, extra: Partial<BundleResult> = {}): BundleResult => ({ bundlePath, ok: false, error, ...extra });
-  let bundle: SerializedBundle & { dsseEnvelope?: { payload: string; payloadType: string } };
+  let bundle: SerializedBundle & { dsseEnvelope?: { payload: string; payloadType: string }; verificationMaterial?: unknown };
+  let logIndexes: string[] = [];
   try {
     bundle = JSON.parse(await readFile(bundlePath, "utf8"));
+    logIndexes = bundleLogIndexes(bundle);
   } catch (e) {
     return fail(`cannot read bundle: ${(e as Error).message}`);
   }
-  if (!bundle.dsseEnvelope) return fail("bundle has no DSSE envelope (not an attestation)");
+  const withLog = (result: BundleResult): BundleResult => (logIndexes.length ? { ...result, logIndexes } : result);
+  if (!bundle.dsseEnvelope) return withLog(fail("bundle has no DSSE envelope (not an attestation)"));
 
   let statement: Statement;
   try {
     statement = JSON.parse(Buffer.from(bundle.dsseEnvelope.payload, "base64").toString("utf8"));
   } catch {
-    return fail("attestation payload is not valid JSON");
+    return withLog(fail("attestation payload is not valid JSON"));
   }
   if (statement.predicateType !== PREDICATE_TYPE) {
-    return fail(`unsupported predicate type: ${statement.predicateType}`, { statement });
+    return withLog(fail(`unsupported predicate type: ${statement.predicateType}`, { statement }));
   }
   if (!statement.subject?.some((s) => s.digest?.sha256 === artifactDigest)) {
-    return fail("certificate is for a different artifact (digest mismatch)", { statement });
+    return withLog(fail("certificate is for a different artifact (digest mismatch)", { statement }));
   }
 
   let signer;
@@ -223,17 +252,17 @@ export async function verifyBundle(bundlePath: string, artifactDigest: string, p
     // Checks certificate chain to the Sigstore root, signature, and Rekor inclusion.
     signer = await sigstoreVerify(bundle);
   } catch (e) {
-    return fail(`signature verification failed: ${(e as Error).message}`, { statement });
+    return withLog(fail(`signature verification failed: ${(e as Error).message}`, { statement }));
   }
   const identity = (signer.identity ?? {}) as Identity;
   const accepted = matchSigner(policy, identity);
   if (!accepted) {
-    return fail(`signer is not an accepted workrr certifier: ${identity.subjectAlternativeName ?? "unknown"}`, {
+    return withLog(fail(`signer is not an accepted workrr certifier: ${identity.subjectAlternativeName ?? "unknown"}`, {
       statement,
       signerIdentity: identity.subjectAlternativeName,
-    });
+    }));
   }
-  return { bundlePath, ok: true, forge: accepted.forge, signerIdentity: identity.subjectAlternativeName, statement };
+  return withLog({ bundlePath, ok: true, forge: accepted.forge, signerIdentity: identity.subjectAlternativeName, statement });
 }
 
 function policyOf(statement: Statement | undefined): { policyName?: string; policyDigest?: string } {
@@ -245,13 +274,36 @@ export async function verifyArtifact(
   path: string,
   bundlePaths: string[],
   policy: TrustPolicy = DEFAULT_TRUST_POLICY,
-  expectedSource?: string,
+  options: VerifyOptions = {},
 ): Promise<VerifyResult> {
   const { sha256: artifactDigest } = await digestArtifact(path);
   const bundles = await Promise.all(bundlePaths.map((b) => verifyBundle(b, artifactDigest, policy)));
+  const checkRevocation = options.revocations !== undefined && !options.offline;
+  for (const bundle of bundles) {
+    if (!bundle.ok) continue;
+    if (checkRevocation) {
+      const revoked = revocationError(options.revocations ?? [], artifactDigest, bundle.logIndexes ?? []);
+      if (revoked) {
+        bundle.ok = false;
+        bundle.error = revoked;
+        continue;
+      }
+    }
+    if (baselineRejected(policyOf(bundle.statement).policyDigest, options.baselinePolicyDigests)) {
+      bundle.ok = false;
+      bundle.error = "policy digest is not in the signed trust policy";
+    }
+  }
+  const notes = options.offline
+    ? [OFFLINE_WARNING]
+    : checkRevocation
+      ? []
+      : ["revocation is not checked in v0.1 (revocation ledger ships in v0.2)"];
   const valid = bundles.filter((b) => b.ok);
-  const notes = ["revocation is not checked in v0.1 (revocation ledger ships in v0.2)"];
-  if (valid.length === 0) return { ok: false, artifactDigest, bundles, notes };
+  const revoked = bundles.some((b) => b.error?.startsWith("REVOKED:"));
+  if (valid.length === 0) {
+    return { ok: false, status: revoked ? "REVOKED" : "rejected", artifactDigest, bundles, notes };
+  }
 
   // Gold: two forges, silver on both, identical checks (spec §4).
   const silver = valid.filter((b) => b.statement?.predicate.level === "silver");
@@ -269,8 +321,8 @@ export async function verifyArtifact(
     level,
     policies: valid.map((b) => policyOf(b.statement)),
     sources: valid.map((b) => b.statement?.predicate.source.uri ?? ""),
-    expectedSource,
+    expectedSource: options.expectedSource,
     notes,
   });
-  return { artifactDigest, bundles, ...gated };
+  return { artifactDigest, bundles, status: gated.ok ? "verified" : "rejected", ...gated };
 }

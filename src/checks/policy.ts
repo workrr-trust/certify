@@ -1,5 +1,6 @@
 // Policy conformance against a named, digested policy.
 import type { Artifact } from "../artifact.js";
+import type { ScanException } from "./scan.js";
 import { jsonDigest } from "../digest.js";
 
 export type Policy = {
@@ -10,6 +11,8 @@ export type Policy = {
   // When set, a skill's `allowed-tools` frontmatter may only list these tools.
   allowedTools?: string[];
   requireLicense?: boolean;
+  // Signed finding exceptions covered by policyDigest.
+  scanExceptions?: ScanException[];
 };
 
 export const BASELINE_POLICY_NAME = "workrr-baseline-v0.1";

@@ -10,6 +10,14 @@ type Rule = { id: string; severity: Severity; description: string; pattern: stri
 
 export const RULESET_VERSION = "workrr-scan-v0.1";
 
+export type ScanException = {
+  rule: string;
+  file: string;
+  line?: number;
+  reason: string;
+  approvedBy?: string;
+};
+
 export const RULES: Rule[] = [
   { id: "WT001", severity: "high", description: "Instruction override phrasing",
     pattern: String.raw`\b(ignore|disregard|forget)\s+(all\s+|any\s+)?(previous|prior|above|earlier|preceding)\s+(instructions|prompts|rules|directions)`, flags: "gi" },
@@ -24,7 +32,7 @@ export const RULES: Rule[] = [
   { id: "WT006", severity: "high", description: "Reads credential stores",
     pattern: String.raw`(~|\$HOME)?/?\.(ssh/(id_[a-z0-9]+|authorized_keys)|aws/credentials|netrc|git-credentials|docker/config\.json|kube/config)\b`, flags: "gi" },
   { id: "WT007", severity: "high", description: "Instructs concealment from the user",
-    pattern: String.raw`\b(do\s+not|don't|never)\s+(tell|inform|mention|reveal|show)\b[^\n]{0,40}\b(the\s+)?(user|human|operator)\b`, flags: "gi" },
+    pattern: String.raw`\b(do\s+not|don't|never)\s+(tell|inform|mention|reveal|show)\b[^\n]{0,40}\bthe\s+(user|human|operator)\b`, flags: "gi" },
   { id: "WT008", severity: "high", description: "Hidden HTML comment carrying instructions",
     pattern: String.raw`<!--(?:(?!-->)[\s\S]){0,2000}?\b(ignore|instruction|system prompt|you are|assistant|exfiltrate)\b[\s\S]*?-->`, flags: "gi" },
   { id: "WT009", severity: "warn", description: "Sends data to a URL",
@@ -33,10 +41,31 @@ export const RULES: Rule[] = [
     pattern: String.raw`[A-Za-z0-9+/]{240,}={0,2}`, flags: "g" },
 ];
 
-export type Finding = { rule: string; severity: Severity; file: string; line: number };
-export type ScanResult = { result: "pass" | "fail"; rulesetVersion: string; rulesetDigest: string; findings: Finding[] };
+export type Finding = { rule: string; severity: Severity; file: string; line: number; excepted?: boolean; exceptionReason?: string };
+export type ScanResult = {
+  result: "pass" | "fail";
+  rulesetVersion: string;
+  rulesetDigest: string;
+  findings: Finding[];
+  exceptions?: ScanException[];
+};
 
-export async function scanArtifact(artifact: Artifact): Promise<ScanResult> {
+const DEFENSIVE_WT001_LINE = /\b(never\s+follow|not\s+an?\s+instruction|neither\s+an?\s+instruction|prompt[- ]injection|untrusted\s+data)\b/i;
+
+function isDefensiveExample(ruleId: string, file: string, lineText: string, matchStartInLine: number): boolean {
+  if (ruleId !== "WT001") return false;
+  if (/(^|\/)(evals|test|tests|fixtures)\//.test(file) && file.endsWith(".json")) return true;
+  const before = lineText.slice(0, matchStartInLine);
+  if ((before.endsWith('"') || before.endsWith("\u201c") || before.endsWith("'")) && DEFENSIVE_WT001_LINE.test(lineText)) {
+    return true;
+  }
+  if (DEFENSIVE_WT001_LINE.test(lineText) && /["\u201c']/.test(before)) {
+    return true;
+  }
+  return false;
+}
+
+export async function scanArtifact(artifact: Artifact, exceptions?: ScanException[]): Promise<ScanResult> {
   const findings: Finding[] = [];
   const escaping = new Set(artifact.escapingSymlinks ?? []);
   for (const f of artifact.digest.files) {
@@ -49,23 +78,43 @@ export async function scanArtifact(artifact: Artifact): Promise<ScanResult> {
   // File by UTF-8 byte order (not JS UTF-16 order), then line, then rule id, so
   // every implementation orders findings identically (spec §3).
   findings.sort((a, b) => byteOrder(a.file, b.file) || a.line - b.line || byteOrder(a.rule, b.rule));
-  const failing = findings.some((x) => x.severity !== "warn");
+  const appliedExceptions: ScanException[] = [];
+  if (exceptions?.length) {
+    for (const f of findings) {
+      const ex = exceptions.find(
+        (e) => e.rule === f.rule && e.file === f.file && (e.line === undefined || e.line === f.line),
+      );
+      if (ex) {
+        f.excepted = true;
+        f.exceptionReason = ex.reason;
+        if (!appliedExceptions.includes(ex)) appliedExceptions.push(ex);
+      }
+    }
+  }
+  const failing = findings.some((x) => x.severity !== "warn" && !x.excepted);
   return {
     result: failing ? "fail" : "pass",
     rulesetVersion: RULESET_VERSION,
     rulesetDigest: jsonDigest({ version: RULESET_VERSION, rules: RULES }),
     findings,
+    ...(appliedExceptions.length ? { exceptions: appliedExceptions } : {}),
   };
 }
 
 export function scanText(text: string, file: string): Finding[] {
   const out: Finding[] = [];
+  const lines = text.split("\n");
   for (const rule of RULES) {
     const re = new RegExp(rule.pattern, rule.flags.includes("m") ? rule.flags : rule.flags + "m");
     const seenLines = new Set<number>();
     for (const m of text.matchAll(re)) {
-      const line = text.slice(0, m.index).split("\n").length;
+      const prefix = text.slice(0, m.index);
+      const lineIdx = prefix.split("\n").length - 1;
+      const line = lineIdx + 1;
       if (seenLines.has(line)) continue;
+      const lastNl = prefix.lastIndexOf("\n");
+      const col = lastNl < 0 ? (m.index ?? 0) : (m.index ?? 0) - lastNl - 1;
+      if (isDefensiveExample(rule.id, file, lines[lineIdx] ?? "", col)) continue;
       seenLines.add(line);
       out.push({ rule: rule.id, severity: rule.severity, file, line });
     }

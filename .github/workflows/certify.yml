@@ -17,6 +17,10 @@
 # which has no id-token permission and cannot sign. The `certify` job never
 # executes artifact code; it re-derives the digest itself and only accepts a test
 # report whose digest matches.
+#
+# Do not fold this workflow into the root action.yml. That action runs inside
+# the caller's job, so Fulcio would record the caller. Only this file, called
+# at a tag pinned in the trust policy, is a signer. The root action verifies.
 name: workrr-certify
 
 on:
