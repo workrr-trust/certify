@@ -1,16 +1,10 @@
 # GitLab Certifier & Two-Forge Gold Setup
 
-`workrr-trust/certify` ships `.gitlab-ci.yml` at the repository root so the same tagged certifier release can run on GitLab CI (`https://gitlab.com/workrr-trust/certify-gitlab`) and issue a second, independent Silver certificate for **Gold** verification.
+`workrr-trust/certify` ships `.gitlab-ci.yml` at the repository root so the same tagged certifier release can run on GitLab CI (`https://gitlab.com/workrr-trust/ledger` via `mirror/gitlab-ci.yml` or `https://gitlab.com/workrr-trust/certify-gitlab` via `.gitlab-ci.yml`) and issue a second, independent Silver certificate for **Gold** verification.
 
-## 1. Mirroring `workrr-trust/certify` to GitLab
+## 1. Public GitLab Mirror (`gitlab.com/workrr-trust/ledger`)
 
-1. Create the public GitLab group and project `https://gitlab.com/workrr-trust/certify-gitlab`.
-2. Push this repository and its annotated release tags (`v0.1.0`, `v0.1.1`, and subsequent tags) to GitLab so the annotated tag objects match:
-   ```bash
-   git remote add gitlab https://gitlab.com/workrr-trust/certify-gitlab.git
-   git push gitlab main --tags
-   ```
-   Because Git tag objects are content-addressed, pushing the annotated tags preserves the exact `Build Signer Digest` (`1.3.6.1.4.1.57264.1.10`) pinned in `src/trust-policy.ts` and `go/trustpolicy.go`.
+`https://gitlab.com/workrr-trust/ledger` is already public and syncing on a 6-hourly pipeline schedule via `mirror/gitlab-ci.yml`. The trust policy in `src/trust-policy.ts` and `go/trustpolicy.go` accepts tagged certifier runs from both `gitlab.com/workrr-trust/ledger//mirror/gitlab-ci.yml@refs/tags/v0.1.x` and `gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.x` pinned to the exact release tag object digests (`v0.1.0`, `v0.1.1`).
 
 ## 2. Calling the GitLab certifier from an artifact repository
 
