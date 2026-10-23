@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,17 +21,26 @@ Usage:
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
-                        [--source <repo>] [--json] [--trusted-root trusted_root.json]
+                        [--source <repo>] [--offline] [--json] [--trusted-root trusted_root.json]
 
   test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
            in CI, use a job WITHOUT signing permission.
   certify  Runs provenance, policy and scan checks; exits 1 if any check fails.
            In GitHub Actions also writes subject-name / subject-digest outputs.
-  verify   Checks the artifact digest, Sigstore signature, Rekor inclusion and
-           certifier identity. Reports the policy name and digest. A policy that
-           is not the baseline does not verify at a baseline level. --source
-           fails when the certificate's publisher repo does not match.
-           --trusted-root pins a Sigstore trusted root instead of fetching it via TUF.
+  verify   Checks the artifact digest, Sigstore signature, Rekor inclusion,
+           certifier identity, and revocation. Reports the policy name and digest.
+           A policy that is not the baseline does not verify at a baseline level.
+           --source fails when the certificate's publisher repo does not match.
+           --json prints the structured VerifyResult JSON (ok, level, artifactDigest,
+           source, policyName, policyDigest, policyStatus, bundles, notes).
+           Fetches the signed trust policy from the trust API and caches it for 1 hour.
+           --offline uses the policy embedded in this build and does not check
+           revocation. It prints:
+             offline: using the embedded trust policy; revocation was not checked
+           A revoked certificate can still verify in that mode. Pass --trusted-root
+           to verify the Sigstore certificate without fetching the Sigstore TUF root.
+           --trust-policy FILE uses that file. A signed blob is verified; a legacy
+           {version, signers} file is a local override and its signature is not checked.
 `
 
 type args struct {
@@ -41,7 +51,7 @@ type args struct {
 }
 
 var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "source": true}
-var boolOpts = map[string]bool{"run-tests": true, "json": true}
+var boolOpts = map[string]bool{"run-tests": true, "json": true, "offline": true}
 
 // parseArgs follows node:util parseArgs in strict mode: --name value,
 // --name=value, booleans take no value, `--` ends options.
@@ -240,20 +250,59 @@ func run(argv []string) (int, error) {
 		if len(a.bundles) == 0 {
 			return 0, fmt.Errorf("verify needs at least one --bundle")
 		}
-		policy := certify.DefaultTrustPolicy
-		if p := a.strings["trust-policy"]; p != "" {
-			b, err := os.ReadFile(p)
+		loaded, err := certify.LoadTrustPolicy(certify.LoadOptions{
+			Offline: a.bools["offline"], File: a.strings["trust-policy"], TrustedRoot: a.strings["trusted-root"],
+		})
+		if err != nil {
+			return 0, err
+		}
+		if loaded.Status != "ok" {
+			d, err := certify.DigestArtifact(path)
 			if err != nil {
 				return 0, err
 			}
-			if err := json.Unmarshal(b, &policy); err != nil {
-				return 0, err
+			status := "rejected"
+			headline := "NOT VERIFIED"
+			if loaded.Status == "rollback" {
+				status = "ROLLBACK"
+				headline = "ROLLBACK"
 			}
+			failed := map[string]any{
+				"ok": false, "status": status, "artifactDigest": d.SHA256,
+				"bundles": []any{}, "notes": loaded.Warnings,
+			}
+			if a.bools["json"] {
+				os.Stdout.Write(prettyJSON(failed))
+			} else {
+				fmt.Printf("artifact sha256:%s\n%s\n", d.SHA256, headline)
+				for _, n := range loaded.Warnings {
+					fmt.Printf("  note: %s\n", n)
+				}
+			}
+			return 1, nil
 		}
 		tms := &certify.TrustedMaterialSource{Path: a.strings["trusted-root"]}
-		result, err := certify.VerifyArtifact(path, a.bundles, &policy, tms, a.strings["source"])
+		result, err := certify.VerifyArtifact(path, a.bundles, &loaded.Policy, tms, certify.VerifyOptions{
+			Revocations: loaded.Revocations, CheckRevocation: loaded.RevocationChecked && !a.bools["offline"],
+			Offline: a.bools["offline"], BaselinePolicyDigests: loaded.BaselinePolicyDigests,
+			ExpectedSource: a.strings["source"],
+		})
 		if err != nil {
 			return 0, err
+		}
+		if !a.bools["offline"] && !loaded.RevocationChecked {
+			filtered := result.Notes[:0]
+			for _, n := range result.Notes {
+				if !strings.HasPrefix(n, "revocation is not checked in v0.1") {
+					filtered = append(filtered, n)
+				}
+			}
+			result.Notes = filtered
+		}
+		for _, w := range loaded.Warnings {
+			if !slices.Contains(result.Notes, w) {
+				result.Notes = append(result.Notes, w)
+			}
 		}
 		if a.bools["json"] {
 			os.Stdout.Write(prettyJSON(result))
@@ -283,7 +332,11 @@ func run(argv []string) (int, error) {
 			if result.Band != "" {
 				fmt.Printf("  band %s\n", result.Band)
 			}
-			fmt.Println(certify.VerificationHeadline(result.OK, result.Level, result.PolicyStatus, result.Notes, result.Band))
+			if result.Status == "REVOKED" {
+				fmt.Println("REVOKED")
+			} else {
+				fmt.Println(certify.VerificationHeadline(result.OK, result.Level, result.PolicyStatus, result.Notes, result.Band))
+			}
 			for _, n := range result.Notes {
 				fmt.Printf("  note: %s\n", n)
 			}

@@ -71,7 +71,23 @@
                   "rule": { "type": "string" },
                   "severity": { "enum": ["warn", "high", "critical"] },
                   "file": { "type": "string" },
-                  "line": { "type": "integer", "minimum": 1 }
+                  "line": { "type": "integer", "minimum": 1 },
+                  "excepted": { "type": "boolean" },
+                  "exceptionReason": { "type": "string" }
+                }
+              }
+            },
+            "exceptions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["rule", "file", "reason"],
+                "additionalProperties": false,
+                "properties": {
+                  "rule": { "type": "string" },
+                  "file": { "type": "string" },
+                  "line": { "type": "integer", "minimum": 1 },
+                  "reason": { "type": "string" }
                 }
               }
             }

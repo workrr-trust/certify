@@ -1,5 +1,6 @@
 // Policy conformance against a named, digested policy.
 import type { Artifact } from "../artifact.js";
+import type { ScanException } from "./scan.js";
 import { jsonDigest } from "../digest.js";
 
 export type Policy = {
@@ -10,6 +11,8 @@ export type Policy = {
   // When set, a skill's `allowed-tools` frontmatter may only list these tools.
   allowedTools?: string[];
   requireLicense?: boolean;
+  // Signed finding exceptions covered by policyDigest.
+  scanExceptions?: ScanException[];
 };
 
 export const BASELINE_POLICY_NAME = "workrr-baseline-v0.1";
@@ -47,6 +50,9 @@ export function checkPolicy(artifact: Artifact, policy: Policy = BASELINE_POLICY
   for (const f of files) {
     const ext = f.path.includes(".") ? f.path.slice(f.path.lastIndexOf(".")).toLowerCase() : "";
     if (policy.forbiddenExtensions?.includes(ext)) violations.push(`forbidden file type: ${f.path}`);
+  }
+  for (const sym of artifact.escapingSymlinks ?? []) {
+    violations.push(`symlink points outside artifact directory: ${sym}`);
   }
   if (artifact.type === "skill") {
     const fm = artifact.frontmatter;

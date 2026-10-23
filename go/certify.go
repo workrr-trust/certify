@@ -129,7 +129,11 @@ func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
 		return nil, err
 	}
 	policy := CheckPolicy(a, opts.Policy)
-	scan := ScanArtifact(a)
+	var scanEx []ScanException
+	if opts.Policy != nil {
+		scanEx = opts.Policy.ScanExceptions
+	}
+	scan := ScanArtifact(a, scanEx)
 
 	tests := TestsResult{Result: "none"}
 	failures := []string{}
@@ -159,7 +163,7 @@ func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
 	}
 	if scan.Result == "fail" {
 		for _, f := range scan.Findings {
-			if f.Severity != "warn" {
+			if f.Severity != "warn" && !f.Excepted {
 				failures = append(failures, fmt.Sprintf("scan: %s (%s) %s:%d", f.Rule, f.Severity, f.File, f.Line))
 			}
 		}

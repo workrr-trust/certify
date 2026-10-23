@@ -1,0 +1,34 @@
+# Fail the pull request unless the artifact is certified at silver from the
+# publisher named here.
+#
+# In this repository the action is `./`, which is the commit the workflow
+# runs from. In any other repository, replace that line with a full commit
+# SHA:
+#
+#   uses: workrr-trust/certify@<40-character SHA>
+#
+# v0.1.0 and v0.1.1 are certifier tags. They do not contain this action.
+# Do not use a moving tag. This job does not sign. Grant contents: read
+# only; do not grant id-token or attestations.
+name: workrr
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: workrr
+        uses: ./
+        with:
+          path: skills/my-skill
+          bundle: certificate.sigstore.json
+          source: your-org/your-repo
+          level: silver

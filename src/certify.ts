@@ -83,7 +83,7 @@ export async function certify(path: string, opts: CertifyOptions = {}): Promise<
   const artifact = await loadArtifact(path);
   const { source, check: provenance } = await checkProvenance(path);
   const policy = checkPolicy(artifact, opts.policy);
-  const scan = await scanArtifact(artifact);
+  const scan = await scanArtifact(artifact, opts.policy?.scanExceptions);
 
   let tests: TestsResult = { result: "none" };
   const failures: string[] = [];
@@ -101,7 +101,11 @@ export async function certify(path: string, opts: CertifyOptions = {}): Promise<
   if (provenance.result === "fail") failures.push(`provenance: ${provenance.reason ?? "failed"}`);
   if (policy.result === "fail") failures.push(...policy.violations.map((v) => `policy: ${v}`));
   if (scan.result === "fail") {
-    failures.push(...scan.findings.filter((f) => f.severity !== "warn").map((f) => `scan: ${f.rule} (${f.severity}) ${f.file}:${f.line}`));
+    failures.push(
+      ...scan.findings
+        .filter((f) => f.severity !== "warn" && !f.excepted)
+        .map((f) => `scan: ${f.rule} (${f.severity}) ${f.file}:${f.line}`),
+    );
   }
   if (tests.result === "fail") failures.push(`tests: exit code ${tests.exitCode ?? "?"}`);
 
