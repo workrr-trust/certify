@@ -61,6 +61,7 @@ func RunTests(a *Artifact, timeout time.Duration) TestsResult {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	cmd.Dir = a.Root
+	cmd.Env = append(os.Environ(), "PIP_BREAK_SYSTEM_PACKAGES=1")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	code := 0
 	if err := cmd.Run(); err != nil {

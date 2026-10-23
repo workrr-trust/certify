@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "workrr-registry",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-22",
+  // Registry and hash-chained D1 audit trail for verified publishers and certified artifacts.
+  "account_id": "REPLACE_WITH_ACCOUNT_ID",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {},
+  "routes": [
+    {
+      "pattern": "registry.workrr.ai",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "workrr-registry",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BLOBS",
+      "bucket_name": "workrr-registry-blobs"
+    }
+  ]
+}

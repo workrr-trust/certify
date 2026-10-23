@@ -62,9 +62,13 @@ contract, not implementation details:
   Without `u`, they operate on UTF-16 code units. A finding's line is 1 + the number of
   `\n` before the match start; each rule reports at most one finding per line.
 - **Findings order:** file (UTF-8 byte order), then line, then rule id.
-- **SKILL.md frontmatter** is the YAML between a leading `---` line and the next
-  `---` line, parsed with the YAML 1.2 core schema (no merge keys; duplicate keys are
-  a parse error). A frontmatter field counts only if it is a non-blank string.
+- **SKILL.md frontmatter** is the YAML between a leading `---` line (an optional leading
+  UTF-8 BOM U+FEFF is ignored) and the next `---` line, parsed with the YAML 1.2 core
+  schema (no merge keys; duplicate keys are a parse error). A frontmatter field counts
+  only if it is a non-blank string.
+- **Symlinks** inside an artifact directory must resolve within the artifact root; any
+  symlink whose target escapes the artifact directory fails the policy check and is not
+  read by the scanner.
 
 Cross-implementation test vectors live in [test-vectors/](test-vectors/README.md); every
 implementation must pass them.
@@ -74,9 +78,17 @@ implementation must pass them.
 | Level | Rule |
 |---|---|
 | `silver` | provenance, policy, scan, and tests all `pass` |
-| `banded` | provenance, policy, scan `pass`; tests `none` (not deterministically testable). A trust band is attached only when evidence exists. |
+| `banded` | provenance, policy, scan `pass`; tests `none` (not deterministically testable). Receives a deterministic `A`–`E` trust band (`predicate.band`). |
 | *(no certificate)* | any check `fail` — the certifier exits non-zero and nothing is signed |
 | `gold` | **Assigned only by verifiers, never by certifiers:** two `silver` certificates for the same digest, signed by accepted certifier identities on two different forges, with identical `checks`. |
+
+**Trust bands (`A`–`E`).** When `level` is `banded`, the certifier computes a deterministic
+`A`–`E` grade over four intrinsic signals (1 point each; 4 → `A`, 3 → `B`, 2 → `C`,
+1 → `D`, 0 → `E`), unless overridden by external outcome evidence:
+1. **Zero scan warnings:** `scan.findings` has no `warn`-severity findings.
+2. **Scoped tools:** `SKILL.md` declares `allowed-tools` or the policy pins `allowedTools`.
+3. **Structured instructions:** for a `skill`, `description` states when to trigger (`use when`) and the body has a Markdown heading or numbered step (`1. `); for other types, a top-level `README` or `README.md` is present.
+4. **Declared license:** a top-level `LICENSE`/`LICENCE`/`COPYING` file or a non-blank `license` frontmatter field is present.
 
 ## 5. Signing and logging
 
@@ -99,7 +111,8 @@ A verifier must:
 3. Verify the Sigstore bundle: certificate chain, signature, and Rekor inclusion.
 4. Match the signer identity (SAN, issuer, Build Signer Digest) against the trust policy.
    A SAN of `refs/heads/main`, an unlisted tag, or a digest other than the one pinned
-   for that tag is rejected.
+   for that tag is rejected. The policy embedded in this build lists only
+   `certify.yml@refs/tags/v0.1.0` and `v0.1.1`.
 5. Cross-check `source.uri` and `source.commit` in the predicate against the signing
    certificate's Fulcio `SourceRepositoryURI` (`1.3.6.1.4.1.57264.1.12`) and
    `SourceRepositoryDigest` (`1.3.6.1.4.1.57264.1.13`) extensions when present, and
@@ -108,15 +121,142 @@ A verifier must:
 6. Read `checks.policy.policyName` and `checks.policy.policyDigest` and report both.
    The name `workrr-baseline-v0.1` is reserved: that name with any other digest is
    rejected. Any other digest is not a baseline result, and the verifier must not
-   report `silver`, `gold`, or `banded` for it.
+   report `silver`, `gold`, or `banded` for it. A signed trust policy's
+   `baselinePolicyDigests` map is an additional allow-list when that document is in
+   use; it does not relax this rule.
 6. If the caller passes a source repository, it must match `source.uri` after
    normalizing `.git`, embedded credentials, and `git@host:org/repo`. `owner/repo`
    and `host/owner/repo` match that URL. A mismatch is a failed verification and is
    not reported at a baseline level.
-7. Check the certificate isn't revoked *(revocation ledger: v0.2)*.
-8. For `gold`: repeat 1–6 for a second bundle from a different forge, require both
+7. Check the certificate isn't revoked (§7). `--offline` skips this and must say so.
+8. For `gold`: repeat 1–7 for a second bundle from a different forge, require both
    policies to be the known baseline, and compare `checks` byte-for-byte as canonical
    JSON. The built-in policy has no second forge, so it does not award gold.
+
+## 7. Signed trust policy and revocation
+
+The trust policy is a versioned JSON document. Verifiers fetch it, check its
+signature, and cache it. The service that hosts it is not a trust anchor.
+
+### 7.1 Policy document
+
+Media type of the signed bytes: `application/vnd.workrr.trust-policy+json`.
+The bytes are canonical JSON (§3) with no trailing newline.
+
+| Field | Rule |
+|---|---|
+| `schema` | `workrr-trust-policy-v1` |
+| `sequence` | Integer ≥ 1. A verifier rejects a document whose sequence is lower than the sequence embedded in that build or lower than a sequence it has already verified. |
+| `issuedAt` | `YYYY-MM-DDThh:mm:ssZ` |
+| `signers` | Non-empty list of certifier identities: `forge` (`github` or `gitlab`), `issuer`, `subjectAlternativeName` (regular expression), `buildSignerDigests` (list of 40-hex commits; empty means any commit of that workflow). |
+| `baselinePolicyDigests` | Map of policy name → `sha256:` + 64 hex. When a signed policy is in use, a certificate whose `checks.policy.policyDigest` is outside this map fails. |
+| `revocationFeed` | `https` URL of the revocation collection, with no `/since` suffix. |
+| `revocationWatermark` | Integer ≥ 0. Entries `1..watermark` existed when this policy was signed. |
+| `revocationHead` | 64-hex sha256 of the canonical entry at `revocationWatermark`. Sixty-four zeros when the watermark is 0. |
+
+`sequence` only goes up. An older signed document is a rollback:
+
+```text
+ROLLBACK: trust policy sequence 1 is older than 3
+```
+
+The same rule applies to a revocation checkpoint sequence the client has already verified.
+
+### 7.2 Signature
+
+The on-wire envelope is `application/vnd.workrr.signed-blob+json;version=1`:
+
+```json
+{
+  "mediaType": "application/vnd.workrr.signed-blob+json;version=1",
+  "payloadType": "application/vnd.workrr.trust-policy+json",
+  "payload": "<standard base64 of the canonical document>",
+  "signature": { "algorithm": "sigstore", "bundle": { } }
+}
+```
+
+`payload` is standard base64 (with padding) of the exact bytes that were signed.
+Those bytes must be canonical JSON. The signature is over those bytes, not over
+the envelope.
+
+Production signatures are Sigstore bundles from `cosign sign-blob --bundle`,
+made by a release-tag run of:
+
+- `.github/workflows/trust-policy.yml` for a policy
+- `.github/workflows/revoke.yml` for a revocation entry or checkpoint
+
+Both identities use issuer `https://token.actions.githubusercontent.com` and a
+SAN of
+
+```text
+https://github.com/workrr-trust/certify/.github/workflows/<workflow>.yml@refs/tags/vX.Y.Z
+```
+
+`refs/heads/main` is not accepted. On a revocation entry or checkpoint the
+document's `signer` field must equal that certificate SAN.
+
+The shared test vectors sign with ed25519 instead, so both implementations can
+check tamper and rollback without Fulcio. Production verifiers do not accept
+that key.
+
+### 7.3 Revocation entry
+
+Payload type `application/vnd.workrr.revocation-entry+json`. Schema
+`workrr-revocation-v1`.
+
+| Field | Rule |
+|---|---|
+| `sequence` | Integer ≥ 1, contiguous from the previous entry. |
+| `subject` | Exactly one of `artifactDigest` (64 lowercase hex) or `logIndex` (decimal Rekor index, no leading zeros). |
+| `reason` | One line, 1–200 characters, no ASCII controls. |
+| `timestamp` | `YYYY-MM-DDThh:mm:ssZ` |
+| `signer` | `https` URI of the identity that signed the entry. |
+| `prev` | 64-hex sha256 of the previous entry's canonical JSON, or 64 zeros for sequence 1. |
+
+A checkpoint (`application/vnd.workrr.revocation-checkpoint+json`, schema
+`workrr-revocation-checkpoint-v1`) has `sequence`, `head` (sha256 of the entry
+at that sequence), `timestamp`, and `signer`. It is signed the same way.
+
+A client that loads a policy with watermark *w* and head *h* fetches
+`<revocationFeed>/since/<w>` and requires:
+
+- every entry and the checkpoint to verify;
+- entry sequences `w+1, w+2, …` with `prev` chaining from *h*;
+- the checkpoint `sequence` and `head` to match the last entry;
+- the checkpoint sequence not to go backwards.
+
+A match fails that bundle with `REVOKED: <reason>`. If every otherwise-valid
+bundle is revoked, the result status is `REVOKED`.
+
+A feed that answers but does not verify fails closed. A feed that cannot be
+reached does not. The client adds `revocation was not checked`.
+
+### 7.4 Fetch, cache, offline
+
+- `GET <trust-api>/v1/policy`, then the revocation feed above.
+- A verified policy is cached for one hour. Revocations are fetched on each
+  verification.
+- If the policy cannot be fetched and a previously verified cache entry exists,
+  the cache is used even past the TTL, with `trust policy fetch failed; using cached trust policy`.
+- If there is no cache, the policy embedded in the binary is used, with
+  `trust policy fetch failed; using the embedded trust policy`. The embedded
+  policy's sequence is the floor. It starts at 0 until a release sets it.
+- A policy whose signature does not verify is not used. The embedded policy is
+  used, with `trust policy signature invalid; using the embedded trust policy`.
+- `--offline` does not contact the trust API. It uses the embedded policy, does
+  not check revocation, and prints:
+
+```text
+offline: using the embedded trust policy; revocation was not checked
+```
+
+A revoked certificate can still verify under `--offline`. Passing
+`--trust-policy` a legacy `{version, signers}` file is a local override; the
+signature is not checked and the command says so. A signed blob passed that way
+is verified.
+
+The host (`https://trust-api.workrr.ai`, or `WORKRR_TRUST_API`) is transport.
+Replacing it changes availability, not who can sign.
 
 ## Versioning
 

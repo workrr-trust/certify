@@ -1,5 +1,6 @@
 // Policy conformance against a named, digested policy.
 import type { Artifact } from "../artifact.js";
+import type { ScanException } from "./scan.js";
 import { jsonDigest } from "../digest.js";
 
 export type Policy = {
@@ -10,6 +11,8 @@ export type Policy = {
   // When set, a skill's `allowed-tools` frontmatter may only list these tools.
   allowedTools?: string[];
   requireLicense?: boolean;
+  // Signed finding exceptions covered by policyDigest.
+  scanExceptions?: ScanException[];
 };
 
 export const BASELINE_POLICY_NAME = "workrr-baseline-v0.1";
@@ -48,6 +51,9 @@ export function checkPolicy(artifact: Artifact, policy: Policy = BASELINE_POLICY
     const ext = f.path.includes(".") ? f.path.slice(f.path.lastIndexOf(".")).toLowerCase() : "";
     if (policy.forbiddenExtensions?.includes(ext)) violations.push(`forbidden file type: ${f.path}`);
   }
+  for (const sym of artifact.escapingSymlinks ?? []) {
+    violations.push(`symlink points outside artifact directory: ${sym}`);
+  }
   if (artifact.type === "skill") {
     const fm = artifact.frontmatter;
     if (!fm) violations.push("SKILL.md has no parseable YAML frontmatter");
@@ -75,8 +81,12 @@ export function checkPolicy(artifact: Artifact, policy: Policy = BASELINE_POLICY
 }
 
 // `allowed-tools` may be a YAML list or a comma/space-separated string.
-function listTools(v: unknown): string[] {
+export function listTools(v: unknown): string[] {
   if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
   if (typeof v === "string") return v.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
   return [];
+}
+
+export function hasLicenseFile(files: { path: string }[]): boolean {
+  return files.some((f) => /^(LICENSE|LICENCE|COPYING)(\.[a-z]+)?$/i.test(f.path));
 }

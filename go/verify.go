@@ -30,11 +30,15 @@ type BundleResult struct {
 	SignerIdentity string `json:"signerIdentity,omitempty"`
 	// Statement is the attestation payload exactly as signed (generic JSON).
 	Statement any `json:"statement,omitempty"`
+	// LogIndexes are the Rekor log indexes carried in the bundle.
+	LogIndexes []string `json:"logIndexes,omitempty"`
 }
 
 type VerifyResult struct {
 	OK             bool           `json:"ok"`
+	Status         string         `json:"status,omitempty"`
 	Level          string         `json:"level,omitempty"`
+	Band           string         `json:"band,omitempty"`
 	ArtifactDigest string         `json:"artifactDigest"`
 	Source         string         `json:"source,omitempty"`
 	PolicyName     string         `json:"policyName,omitempty"`
@@ -49,11 +53,22 @@ type VerifyResult struct {
 type VerificationGate struct {
 	OK           bool
 	Level        string
+	Band         string
 	Source       string
 	PolicyName   string
 	PolicyDigest string
 	PolicyStatus string
 	Notes        []string
+}
+
+// VerifyOptions is the signed-policy hook on VerifyArtifact.
+// Leaving it zero keeps the v0.1 "revocation is not checked" note.
+type VerifyOptions struct {
+	Revocations           []*RevocationEntry
+	CheckRevocation       bool
+	Offline               bool
+	BaselinePolicyDigests map[string]string
+	ExpectedSource        string
 }
 
 // Signer is the certificate identity that signed a bundle.
@@ -142,8 +157,11 @@ func worstStatus(statuses []string) string {
 
 // VerificationHeadline is the result line verify prints. It never includes a
 // baseline level unless the gate accepted the policy.
-func VerificationHeadline(ok bool, level, policyStatus string, notes []string) string {
+func VerificationHeadline(ok bool, level, policyStatus string, notes []string, band ...string) string {
 	if ok && level != "" {
+		if level == "banded" && len(band) > 0 && band[0] != "" {
+			return "VERIFIED · level " + level + " · band " + band[0]
+		}
 		return "VERIFIED · level " + level
 	}
 	hard := false
@@ -174,7 +192,7 @@ func uniqueNonEmpty(in []string) []string {
 
 // ApplyVerificationGates turns a cryptographically valid level into the result
 // a caller may print. A non-baseline policy never keeps silver, gold, or banded.
-func ApplyVerificationGates(level string, policies [][2]string, sources []string, expectedSource string, notes []string) VerificationGate {
+func ApplyVerificationGates(level string, policies [][2]string, sources []string, expectedSource string, notes []string, band ...string) VerificationGate {
 	outNotes := append([]string{}, notes...)
 	var statuses []string
 	var assessments [][3]string // status, name, digest; reason stored separately
@@ -245,6 +263,9 @@ func ApplyVerificationGates(level string, policies [][2]string, sources []string
 	if status == "baseline" && !hard {
 		gate.OK = true
 		gate.Level = level
+		if level == "banded" && len(band) > 0 && band[0] != "" {
+			gate.Band = band[0]
+		}
 	}
 	return gate
 }
@@ -342,9 +363,30 @@ func CheckCertificateSourceAndCommit(statement any, signer *Signer) string {
 	return ""
 }
 
+func bundleLogIndexes(data []byte) []string {
+	var raw struct {
+		VerificationMaterial struct {
+			TlogEntries []struct {
+				LogIndex string `json:"logIndex"`
+			} `json:"tlogEntries"`
+		} `json:"verificationMaterial"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range raw.VerificationMaterial.TlogEntries {
+		if logIndexRe.MatchString(e.LogIndex) {
+			out = append(out, e.LogIndex)
+		}
+	}
+	return out
+}
+
 func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *TrustedMaterialSource) BundleResult {
+	var indexes []string
 	fail := func(msg string, statement any) BundleResult {
-		return BundleResult{BundlePath: bundlePath, OK: false, Error: msg, Statement: statement}
+		return BundleResult{BundlePath: bundlePath, OK: false, Error: msg, Statement: statement, LogIndexes: indexes}
 	}
 	data, err := os.ReadFile(bundlePath)
 	if err != nil {
@@ -358,6 +400,7 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fail("cannot read bundle: "+err.Error(), nil)
 	}
+	indexes = bundleLogIndexes(data)
 	if raw.DSSEEnvelope == nil {
 		return fail("bundle has no DSSE envelope (not an attestation)", nil)
 	}
@@ -431,7 +474,7 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 		r.SignerIdentity = signer.SAN
 		return r
 	}
-	return BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Statement: statement}
+	return BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Statement: statement, LogIndexes: indexes}
 }
 
 func predicateField(statement any, key string) any {
@@ -454,24 +497,59 @@ func predicateSource(statement any) string {
 	return uri
 }
 
-func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms *TrustedMaterialSource, expectedSource string) (*VerifyResult, error) {
+func policyDigestOf(statement any) string {
+	_, digest := predicatePolicy(statement)
+	return digest
+}
+
+func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms *TrustedMaterialSource, opts ...VerifyOptions) (*VerifyResult, error) {
+	var opt VerifyOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	expectedSource := opt.ExpectedSource
 	d, err := DigestArtifact(path)
 	if err != nil {
 		return nil, err
 	}
-	res := &VerifyResult{ArtifactDigest: d.SHA256, Bundles: []BundleResult{}, Notes: []string{"revocation is not checked in v0.1 (revocation ledger ships in v0.2)"}}
+	notes := []string{"revocation is not checked in v0.1 (revocation ledger ships in v0.2)"}
+	if opt.Offline {
+		notes = []string{OfflineWarning}
+	} else if opt.CheckRevocation {
+		notes = []string{}
+	}
+	res := &VerifyResult{ArtifactDigest: d.SHA256, Bundles: []BundleResult{}, Notes: notes}
 	var valid []BundleResult
+	revoked := false
 	for _, bp := range bundlePaths {
 		r := VerifyBundle(bp, d.SHA256, policy, tms)
+		if r.OK && opt.CheckRevocation && !opt.Offline {
+			if msg := RevocationError(opt.Revocations, d.SHA256, r.LogIndexes); msg != "" {
+				r.OK = false
+				r.Error = msg
+			}
+		}
+		if r.OK && BaselineRejected(policyDigestOf(r.Statement), opt.BaselinePolicyDigests) {
+			r.OK = false
+			r.Error = "policy digest is not in the signed trust policy"
+		}
+		if strings.HasPrefix(r.Error, "REVOKED:") {
+			revoked = true
+		}
 		res.Bundles = append(res.Bundles, r)
 		if r.OK {
 			valid = append(valid, r)
 		}
 	}
 	if len(valid) == 0 {
+		res.Status = "rejected"
+		if revoked {
+			res.Status = "REVOKED"
+		}
 		return res, nil
 	}
 	res.OK = true
+	res.Status = "verified"
 
 	// Gold: two forges, silver on both (derived from signed checks), identical checks and commit (spec §4).
 	var silver []BundleResult
@@ -514,17 +592,27 @@ func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms 
 	}
 	policies := make([][2]string, len(valid))
 	sources := make([]string, len(valid))
+	band := ""
 	for i, b := range valid {
 		policies[i][0], policies[i][1] = predicatePolicy(b.Statement)
 		sources[i] = predicateSource(b.Statement)
+		if res.Level == "banded" && band == "" {
+			if bv, ok := predicateField(b.Statement, "band").(string); ok {
+				band = bv
+			}
+		}
 	}
-	gate := ApplyVerificationGates(res.Level, policies, sources, expectedSource, res.Notes)
+	gate := ApplyVerificationGates(res.Level, policies, sources, expectedSource, res.Notes, band)
 	res.OK = gate.OK
 	res.Level = gate.Level
+	res.Band = gate.Band
 	res.Source = gate.Source
 	res.PolicyName = gate.PolicyName
 	res.PolicyDigest = gate.PolicyDigest
 	res.PolicyStatus = gate.PolicyStatus
 	res.Notes = gate.Notes
+	if !gate.OK {
+		res.Status = "rejected"
+	}
 	return res, nil
 }
