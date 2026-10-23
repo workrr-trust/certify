@@ -14,6 +14,7 @@ import { scanArtifact, scanText } from "../dist/checks/scan.js";
 import { runTests } from "../dist/checks/tests.js";
 import { canonicalJson, digestArtifact, sha256Hex } from "../dist/digest.js";
 import { normalizeRepoUri } from "../dist/checks/provenance.js";
+import registryWorker from "../services/registry/src/index.ts";
 
 const exec = promisify(execFile);
 
@@ -177,4 +178,194 @@ test("reserved baseline name cannot certify payload.exe as silver", async () => 
 test("normalizes git remotes", () => {
   assert.equal(normalizeRepoUri("git@github.com:workrr-trust/certify.git"), "https://github.com/workrr-trust/certify");
   assert.equal(normalizeRepoUri("https://token@github.com/a/b.git"), "https://github.com/a/b");
+});
+
+test("registry Worker manages verified publishers, R2 bundles, and hash-chained D1 audit log", async () => {
+  const publishers = new Map();
+  const artifacts = new Map();
+  const auditRows = [];
+  const blobs = new Map();
+
+  const env = {
+    BLOBS: {
+      async put(key, val) {
+        blobs.set(key, String(val));
+      },
+      async get(key) {
+        if (!blobs.has(key)) return null;
+        const v = blobs.get(key);
+        return {
+          async text() {
+            return v;
+          },
+          async json() {
+            return JSON.parse(v);
+          },
+          async arrayBuffer() {
+            return new TextEncoder().encode(v).buffer;
+          },
+        };
+      },
+    },
+    DB: {
+      prepare(sql) {
+        let bound = [];
+        return {
+          bind(...vals) {
+            bound = vals;
+            return this;
+          },
+          async first() {
+            if (sql.includes("FROM audit_log ORDER BY sequence DESC LIMIT 1")) {
+              return auditRows.length ? auditRows[auditRows.length - 1] : null;
+            }
+            if (sql.includes("FROM publishers WHERE publisher_id = ?")) {
+              return publishers.get(bound[0]) ?? null;
+            }
+            if (sql.includes("FROM artifacts WHERE artifact_digest = ?")) {
+              return artifacts.get(bound[0]) ?? null;
+            }
+            return null;
+          },
+          async run() {
+            if (sql.startsWith("INSERT OR REPLACE INTO publishers")) {
+              publishers.set(bound[0], {
+                publisher_id: bound[0],
+                forge: bound[1],
+                namespace: bound[2],
+                display_name: bound[3],
+                verification_method: bound[4],
+                verified_at: bound[5],
+                status: "active",
+              });
+            } else if (sql.startsWith("INSERT OR REPLACE INTO artifacts")) {
+              artifacts.set(bound[0], {
+                artifact_digest: bound[0],
+                publisher_id: bound[1],
+                name: bound[2],
+                artifact_type: bound[3],
+                source_uri: bound[4],
+                source_commit: bound[5],
+                source_path: bound[6],
+                level: bound[7],
+                band: bound[8],
+                policy_name: bound[9],
+                policy_digest: bound[10],
+                bundle_r2_key: bound[11],
+                certified_at: bound[12],
+                published_at: bound[13],
+              });
+            } else if (sql.startsWith("INSERT INTO audit_log")) {
+              auditRows.push({
+                sequence: bound[0],
+                event_type: bound[1],
+                actor: bound[2],
+                subject_id: bound[3],
+                payload_json: bound[4],
+                payload_hash: bound[5],
+                created_at: bound[6],
+                prev_hash: bound[7],
+                entry_hash: bound[8],
+              });
+            }
+            return { success: true };
+          },
+          async all() {
+            if (sql.includes("FROM audit_log")) return { results: auditRows };
+            if (sql.includes("FROM publishers")) return { results: [...publishers.values()] };
+            if (sql.includes("FROM artifacts")) return { results: [...artifacts.values()] };
+            return { results: [] };
+          },
+        };
+      },
+    },
+  };
+
+  // 1. Register verified publisher
+  const pubResp = await registryWorker.fetch(
+    new Request("https://registry.workrr.ai/v1/publishers", {
+      method: "POST",
+      body: JSON.stringify({
+        forge: "github",
+        namespace: "workrr-trust",
+        displayName: "workrr-trust",
+        verificationMethod: "sigstore-oidc",
+      }),
+    }),
+    env,
+  );
+  assert.equal(pubResp.status, 201);
+  const pubBody = await pubResp.json();
+  assert.equal(pubBody.publisher.publisherId, "github.com/workrr-trust");
+  assert.equal(pubBody.audit.sequence, 1);
+
+  // 2. Reject artifact from unverified namespace
+  const badArtResp = await registryWorker.fetch(
+    new Request("https://registry.workrr.ai/v1/artifacts", {
+      method: "POST",
+      body: JSON.stringify({
+        artifactDigest: "a".repeat(64),
+        publisherId: "github.com/workrr-trust",
+        name: "csv-summary",
+        artifactType: "skill",
+        sourceUri: "https://github.com/evil/other",
+        sourceCommit: "b".repeat(40),
+        sourcePath: "skills/csv-summary",
+        level: "silver",
+        policyName: "workrr-baseline-v0.1",
+        policyDigest: `sha256:${"c".repeat(64)}`,
+        bundle: { dsseEnvelope: {} },
+      }),
+    }),
+    env,
+  );
+  assert.equal(badArtResp.status, 403);
+
+  // 3. Publish certified artifact from verified publisher
+  const digest = "d".repeat(64);
+  const artResp = await registryWorker.fetch(
+    new Request("https://registry.workrr.ai/v1/artifacts", {
+      method: "POST",
+      body: JSON.stringify({
+        artifactDigest: digest,
+        publisherId: "github.com/workrr-trust",
+        name: "csv-summary",
+        artifactType: "skill",
+        sourceUri: "https://github.com/workrr-trust/sample-skills",
+        sourceCommit: "b".repeat(40),
+        sourcePath: "skills/csv-summary",
+        level: "silver",
+        policyName: "workrr-baseline-v0.1",
+        policyDigest: `sha256:${"c".repeat(64)}`,
+        bundle: { mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json", dsseEnvelope: { payload: "e30=" } },
+      }),
+    }),
+    env,
+  );
+  assert.equal(artResp.status, 201);
+  const artBody = await artResp.json();
+  assert.equal(artBody.audit.sequence, 2);
+  assert.equal(artBody.audit.prevHash, pubBody.audit.entryHash);
+
+  // 4. Fetch bundle from R2
+  const bundleResp = await registryWorker.fetch(
+    new Request(`https://registry.workrr.ai/v1/artifacts/${digest}/bundle`),
+    env,
+  );
+  assert.equal(bundleResp.status, 200);
+  assert.equal((await bundleResp.json()).dsseEnvelope.payload, "e30=");
+
+  // 5. Verify hash-chained audit trail
+  const verifyResp = await registryWorker.fetch(new Request("https://registry.workrr.ai/v1/audit/verify"), env);
+  const verifyBody = await verifyResp.json();
+  assert.equal(verifyBody.ok, true);
+  assert.equal(verifyBody.count, 2);
+  assert.equal(verifyBody.headHash, artBody.audit.entryHash);
+
+  // 6. Detect audit tampering
+  auditRows[0].payload_json = '{"tampered":true}';
+  const tamperedResp = await registryWorker.fetch(new Request("https://registry.workrr.ai/v1/audit/verify"), env);
+  const tamperedBody = await tamperedResp.json();
+  assert.equal(tamperedBody.ok, false);
+  assert.match(tamperedBody.error, /payload_hash mismatch at sequence 1/);
 });
