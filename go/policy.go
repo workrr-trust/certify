@@ -17,8 +17,9 @@ type Policy struct {
 	ForbiddenExtensions []string `json:"forbiddenExtensions,omitempty"`
 	RequiredSkillFields []string `json:"requiredSkillFields,omitempty"`
 	// When set (even to []), a skill's `allowed-tools` frontmatter may only list these tools.
-	AllowedTools   *[]string `json:"allowedTools,omitempty"`
-	RequireLicense bool      `json:"requireLicense,omitempty"`
+	AllowedTools   *[]string       `json:"allowedTools,omitempty"`
+	RequireLicense bool            `json:"requireLicense,omitempty"`
+	ScanExceptions []ScanException `json:"scanExceptions,omitempty"`
 
 	// raw is the policy exactly as supplied; its canonical JSON is the digest
 	// input, so unknown keys are pinned too (as in the TypeScript reference).
