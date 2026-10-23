@@ -7,7 +7,7 @@
   // Replace account_id and database_id before a production deploy.
   // The executable steps are docs/deploy/trust-api-runbook.md.
   // There are no Worker secrets and no plaintext vars.
-  "account_id": "REPLACE_WITH_ACCOUNT_ID",
+  "account_id": "567f3196420ce625839042b03f9fd706",
   "workers_dev": false,
   "preview_urls": false,
   "observability": {
@@ -25,7 +25,7 @@
     {
       "binding": "DB",
       "database_name": "workrr-trust",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "281b7318-5be1-4e4e-bb1a-3bb21ca60f96",
       "migrations_dir": "migrations"
     }
   ],

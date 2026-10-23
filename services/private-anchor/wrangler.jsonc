@@ -5,7 +5,7 @@
   "compatibility_date": "2026-10-22",
   // Hash-only public anchor log for private-tier certificates.
   // Stores only SHA-256 digests (never artifact names, source URLs, policies, or predicates).
-  "account_id": "REPLACE_WITH_ACCOUNT_ID",
+  "account_id": "567f3196420ce625839042b03f9fd706",
   "workers_dev": false,
   "preview_urls": false,
   "observability": {
@@ -23,7 +23,7 @@
     {
       "binding": "DB",
       "database_name": "workrr-private-anchor",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "211e74ff-7e4e-4ffd-80bc-e76abec64bf6",
       "migrations_dir": "migrations"
     }
   ]

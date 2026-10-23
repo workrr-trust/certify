@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-22",
   // Registry and hash-chained D1 audit trail for verified publishers and certified artifacts.
-  "account_id": "REPLACE_WITH_ACCOUNT_ID",
+  "account_id": "567f3196420ce625839042b03f9fd706",
   "workers_dev": false,
   "preview_urls": false,
   "observability": {
@@ -22,7 +22,7 @@
     {
       "binding": "DB",
       "database_name": "workrr-registry",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "9789be7c-b841-4dd8-8dda-f6b20eec12c2",
       "migrations_dir": "migrations"
     }
   ],
