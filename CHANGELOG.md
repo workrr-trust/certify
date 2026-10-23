@@ -23,6 +23,16 @@
 - Every action in `certify.yml`, `ci.yml`, and `release.yml` is pinned by commit
   SHA. The one-time npm bootstrap token is removed; publish uses trusted
   publishing only.
+- The root Marketplace action does not sign and is not a trusted signer. The
+  trust set is unchanged: still only `certify.yml` at v0.1.0 and v0.1.1.
+
+### Added
+
+- Root `action.yml` (`workrr verify`) is a verify-only GitHub Action eligible
+  for the Marketplace. It fails the job unless a certificate meets a minimum
+  level and source, using the built-in trust policy of the pinned commit.
+  Certification stays on `.github/workflows/certify.yml`. A copy-paste
+  quickstart and starter workflows cover publishers; consumers use the action.
 
 ### Breaking
 

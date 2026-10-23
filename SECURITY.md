@@ -27,6 +27,11 @@ accepts only the released tags v0.1.0 and v0.1.1, each pinned to its Build Signe
 Digest, and workflow actions are pinned by commit SHA. The signed trust policy's
 embedded fallback is that same set.
 
+The root `action.yml` is a verifier. It does not request an OIDC token and it does
+not attest. A composite action runs inside the caller's job, so a certificate minted
+there would name the caller, which this policy rejects. The action also has no input
+that replaces the built-in signer set.
+
 `.github/workflows/trust-policy.yml` and `.github/workflows/revoke.yml` are the
 identities that sign the trust policy and revocations. Both are accepted only
 from a release tag. Their Build Signer Digests are not pinned yet; pin them in
