@@ -14,6 +14,8 @@ import { scanArtifact, scanText } from "../dist/checks/scan.js";
 import { runTests } from "../dist/checks/tests.js";
 import { canonicalJson, digestArtifact, sha256Hex } from "../dist/digest.js";
 import { normalizeRepoUri } from "../dist/checks/provenance.js";
+import { applyVerificationGates, baselinePolicyDigest, evaluateGoldBundles } from "../dist/verify.js";
+import { signStatementWithSigstore } from "../scripts/gitlab-sign.mjs";
 
 const exec = promisify(execFile);
 
@@ -125,4 +127,89 @@ test("reserved baseline name cannot certify payload.exe as silver", async () => 
 test("normalizes git remotes", () => {
   assert.equal(normalizeRepoUri("git@github.com:workrr-trust/certify.git"), "https://github.com/workrr-trust/certify");
   assert.equal(normalizeRepoUri("https://token@github.com/a/b.git"), "https://github.com/a/b");
+});
+
+test("GitLab signing helper validates statement and writes Sigstore bundle", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "workrr-gl-"));
+  const stmtPath = join(dir, "statement.json");
+  const outPath = join(dir, "certificate", "certificate.sigstore.json");
+  const statement = {
+    _type: "https://in-toto.io/Statement/v1",
+    subject: [{ name: "csv-summary", digest: { sha256: "a".repeat(64) } }],
+    predicateType: "https://trust.workrr.ai/certificate/v0.1",
+    predicate: {},
+  };
+  await writeFile(stmtPath, JSON.stringify(statement));
+  let capturedType;
+  let capturedToken;
+  const fakeBundle = { mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json", dsseEnvelope: {} };
+  const res = await signStatementWithSigstore({
+    statementPath: stmtPath,
+    outPath,
+    identityToken: "eyJ.fake.token",
+    attestFn: async (_payload, payloadType, opts) => {
+      capturedType = payloadType;
+      capturedToken = opts.identityToken;
+      return fakeBundle;
+    },
+  });
+  assert.equal(capturedType, "application/vnd.in-toto+json");
+  assert.equal(capturedToken, "eyJ.fake.token");
+  assert.deepEqual(res, fakeBundle);
+});
+
+test("Gold requires GitHub and GitLab Silver for the same digest, commit, path, and identical checks", () => {
+  const baseChecks = {
+    provenance: { result: "pass", unchangedFromCommit: true },
+    policy: { result: "pass", policyName: "workrr-baseline-v0.1", policyDigest: baselinePolicyDigest(), violations: [] },
+    scan: { result: "pass", rulesetVersion: "workrr-scan-v0.1", rulesetDigest: `sha256:${"0".repeat(64)}`, findings: [] },
+    tests: { result: "pass", command: "npm test", exitCode: 0 },
+  };
+  const makeBundle = (forge, commit, checks = baseChecks, uri = `https://${forge}.com/workrr-trust/sample-skills`) => ({
+    bundlePath: `${forge}.sigstore.json`,
+    ok: true,
+    forge,
+    statement: {
+      _type: "https://in-toto.io/Statement/v1",
+      subject: [{ name: "csv-summary", digest: { sha256: "f".repeat(64) } }],
+      predicateType: "https://trust.workrr.ai/certificate/v0.1",
+      predicate: {
+        artifact: { name: "csv-summary", type: "skill", digestAlgorithm: "workrr-dirhash-v1", fileCount: 3 },
+        source: { uri, commit, path: "skills/csv-summary" },
+        checks,
+        level: "silver",
+        certifier: { name: "@workrr-trust/certify", version: "0.1.1", runtime: forge === "github" ? "github-actions" : "gitlab-ci" },
+        certifiedAt: "2026-10-22T00:00:00Z",
+      },
+    },
+  });
+
+  const gh = makeBundle("github", "a".repeat(40));
+  const gl = makeBundle("gitlab", "a".repeat(40));
+  const goldEval = evaluateGoldBundles([gh, gl], []);
+  assert.equal(goldEval.level, "gold");
+  const goldGate = applyVerificationGates({
+    level: goldEval.level,
+    policies: [gh.statement.predicate.checks.policy, gl.statement.predicate.checks.policy],
+    sources: [gh.statement.predicate.source.uri, gl.statement.predicate.source.uri],
+    expectedSource: "https://github.com/workrr-trust/sample-skills",
+    notes: goldEval.notes,
+  });
+  assert.equal(goldGate.ok, true, goldGate.notes.join("\n"));
+  assert.equal(goldGate.level, "gold");
+
+  // Different source commits → Silver, not Gold
+  const glDiffCommit = makeBundle("gitlab", "b".repeat(40));
+  const commitMismatch = evaluateGoldBundles([gh, glDiffCommit], []);
+  assert.equal(commitMismatch.level, "silver");
+  assert.ok(commitMismatch.notes.includes("two forges signed, but their source commits differ — not Gold"));
+
+  // Different check results → Silver, not Gold
+  const glDiffChecks = makeBundle("gitlab", "a".repeat(40), {
+    ...baseChecks,
+    tests: { result: "pass", command: "pytest", exitCode: 0 },
+  });
+  const checkMismatch = evaluateGoldBundles([gh, glDiffChecks], []);
+  assert.equal(checkMismatch.level, "silver");
+  assert.ok(checkMismatch.notes.includes("two forges signed, but their check results differ — not Gold"));
 });

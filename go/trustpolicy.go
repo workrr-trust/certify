@@ -36,6 +36,7 @@ type TrustPolicy struct {
 //	v0.1.1 tag 78d8c1a98c929b7b1c1b532c25256582a84887b1
 //	       commit 5a1d5c47fc1175db9979e13a2301dae57458a135
 const certifySAN = `https://github\.com/workrr-trust/certify/\.github/workflows/certify\.yml@refs/tags/`
+const gitlabCertifySAN = `https://gitlab\.com/workrr-trust/certify-gitlab//?\.gitlab-ci\.yml@refs/tags/`
 
 var DefaultTrustPolicy = TrustPolicy{
 	Version: "workrr-trust-policy-v0.1",
@@ -50,6 +51,18 @@ var DefaultTrustPolicy = TrustPolicy{
 			Forge:                  ForgeGitHub,
 			Issuer:                 "https://token.actions.githubusercontent.com",
 			SubjectAlternativeName: `^` + certifySAN + `v0\.1\.1$`,
+			BuildSignerDigests:     []string{"78d8c1a98c929b7b1c1b532c25256582a84887b1"},
+		},
+		{
+			Forge:                  ForgeGitLab,
+			Issuer:                 "https://gitlab.com",
+			SubjectAlternativeName: `^` + gitlabCertifySAN + `v0\.1\.0$`,
+			BuildSignerDigests:     []string{"9fbe3e453cbd80bef0301f08db79408bb12c7d64"},
+		},
+		{
+			Forge:                  ForgeGitLab,
+			Issuer:                 "https://gitlab.com",
+			SubjectAlternativeName: `^` + gitlabCertifySAN + `v0\.1\.1$`,
 			BuildSignerDigests:     []string{"78d8c1a98c929b7b1c1b532c25256582a84887b1"},
 		},
 	},

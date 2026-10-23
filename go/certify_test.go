@@ -215,6 +215,10 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v011) == nil {
 		t.Fatal("rejected the pinned v0.1.1 tag")
 	}
+	gl := &Signer{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.0", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010}
+	if s := MatchSigner(&DefaultTrustPolicy, gl); s == nil || s.Forge != ForgeGitLab {
+		t.Fatalf("expected gitlab signer, got %+v", s)
+	}
 	for _, bad := range []*Signer{
 		{SAN: gh.SAN + "x", Issuer: gh.Issuer, BuildSignerDigest: tagV010},
 		{SAN: strings.Replace(gh.SAN, "workrr-trust", "evil", 1), Issuer: gh.Issuer, BuildSignerDigest: tagV010},
@@ -223,7 +227,8 @@ func TestMatchSigner(t *testing.T) {
 		{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/heads/dev", Issuer: gh.Issuer, BuildSignerDigest: tagV010},
 		// Peeled commit, not the annotated tag object Fulcio records.
 		{SAN: gh.SAN, Issuer: gh.Issuer, BuildSignerDigest: "edf382958dd7ce070db0ed13af1cc8c31a150901"},
-		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab/.gitlab-ci.yml@refs/tags/v0.1.0", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
+		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/heads/main", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
+		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.0", Issuer: "https://gitlab.com", BuildSignerDigest: "edf382958dd7ce070db0ed13af1cc8c31a150901"},
 	} {
 		if s := MatchSigner(&DefaultTrustPolicy, bad); s != nil {
 			t.Errorf("accepted %+v", bad)
@@ -312,5 +317,54 @@ func TestVerifySigstorePublicGoodBundle(t *testing.T) {
 	r := VerifyBundle(bundlePath, strings.Repeat("0", 64), &DefaultTrustPolicy, &TrustedMaterialSource{Path: filepath.Join(dir, exp.TrustedRoot)})
 	if r.OK || r.Error != "unsupported predicate type: "+exp.PredicateType {
 		t.Fatalf("got %+v", r.Error)
+	}
+}
+
+func TestGoldRequiresTwoForgesSameCommitAndChecks(t *testing.T) {
+	baseDigest := BaselinePolicy().Digest()
+	makeBundle := func(forge Forge, commit, cmd string) BundleResult {
+		return BundleResult{
+			BundlePath: string(forge) + ".sigstore.json",
+			OK:         true,
+			Forge:      forge,
+			Statement: map[string]any{
+				"predicate": map[string]any{
+					"level": "silver",
+					"source": map[string]any{
+						"uri":    "https://" + string(forge) + ".com/workrr-trust/sample-skills",
+						"commit": commit,
+						"path":   "skills/csv-summary",
+					},
+					"checks": map[string]any{
+						"provenance": map[string]any{"result": "pass", "unchangedFromCommit": true},
+						"policy":     map[string]any{"result": "pass", "policyName": BaselinePolicyName, "policyDigest": baseDigest, "violations": []any{}},
+						"scan":       map[string]any{"result": "pass", "rulesetVersion": RulesetVersion, "rulesetDigest": RulesetDigest(), "findings": []any{}},
+						"tests":      map[string]any{"result": "pass", "command": cmd, "exitCode": float64(0)},
+					},
+				},
+			},
+		}
+	}
+	gh := makeBundle(ForgeGitHub, strings.Repeat("a", 40), "npm test")
+	gl := makeBundle(ForgeGitLab, strings.Repeat("a", 40), "npm test")
+	lvl, notes := EvaluateGoldBundles([]BundleResult{gh, gl}, nil)
+	if lvl != "gold" {
+		t.Fatalf("expected gold, got %s (%v)", lvl, notes)
+	}
+	gate := ApplyVerificationGates(lvl, [][2]string{{BaselinePolicyName, baseDigest}, {BaselinePolicyName, baseDigest}}, []string{"https://github.com/workrr-trust/sample-skills", "https://gitlab.com/workrr-trust/sample-skills"}, "https://github.com/workrr-trust/sample-skills", notes)
+	if !gate.OK || gate.Level != "gold" {
+		t.Fatalf("expected gold gate pass, got %+v", gate)
+	}
+
+	glDiffCommit := makeBundle(ForgeGitLab, strings.Repeat("b", 40), "npm test")
+	lvl2, notes2 := EvaluateGoldBundles([]BundleResult{gh, glDiffCommit}, nil)
+	if lvl2 != "silver" || !slices.Contains(notes2, "two forges signed, but their source commits differ — not Gold") {
+		t.Fatalf("expected silver on commit mismatch, got %s (%v)", lvl2, notes2)
+	}
+
+	glDiffChecks := makeBundle(ForgeGitLab, strings.Repeat("a", 40), "pytest")
+	lvl3, notes3 := EvaluateGoldBundles([]BundleResult{gh, glDiffChecks}, nil)
+	if lvl3 != "silver" || !slices.Contains(notes3, "two forges signed, but their check results differ — not Gold") {
+		t.Fatalf("expected silver on check mismatch, got %s (%v)", lvl3, notes3)
 	}
 }

@@ -26,6 +26,7 @@ export type TrustPolicy = { version: string; signers: AcceptedSigner[] };
 //   v0.1.1 tag 78d8c1a98c929b7b1c1b532c25256582a84887b1
 //          commit 5a1d5c47fc1175db9979e13a2301dae57458a135
 const CERTIFY_SAN = String.raw`https://github\.com/workrr-trust/certify/\.github/workflows/certify\.yml@refs/tags/`;
+const GITLAB_CERTIFY_SAN = String.raw`https://gitlab\.com/workrr-trust/certify-gitlab//?\.gitlab-ci\.yml@refs/tags/`;
 
 export const DEFAULT_TRUST_POLICY: TrustPolicy = {
   version: "workrr-trust-policy-v0.1",
@@ -40,6 +41,18 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
       forge: "github",
       issuer: "https://token.actions.githubusercontent.com",
       subjectAlternativeName: `^${CERTIFY_SAN}v0\\.1\\.1$`,
+      buildSignerDigests: ["78d8c1a98c929b7b1c1b532c25256582a84887b1"],
+    },
+    {
+      forge: "gitlab",
+      issuer: "https://gitlab.com",
+      subjectAlternativeName: `^${GITLAB_CERTIFY_SAN}v0\\.1\\.0$`,
+      buildSignerDigests: ["9fbe3e453cbd80bef0301f08db79408bb12c7d64"],
+    },
+    {
+      forge: "gitlab",
+      issuer: "https://gitlab.com",
+      subjectAlternativeName: `^${GITLAB_CERTIFY_SAN}v0\\.1\\.1$`,
       buildSignerDigests: ["78d8c1a98c929b7b1c1b532c25256582a84887b1"],
     },
   ],
