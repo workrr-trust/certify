@@ -38,11 +38,6 @@ type AnchorReceipt struct {
 	ChainHash         string `json:"chainHash"`
 }
 
-type VerifyOptions struct {
-	PrivateMode   bool
-	AnchorReceipt *AnchorReceipt
-}
-
 type BundleResult struct {
 	BundlePath     string `json:"bundlePath"`
 	OK             bool   `json:"ok"`
@@ -53,11 +48,15 @@ type BundleResult struct {
 	Statement      any           `json:"statement,omitempty"`
 	PrivateSigning *bool         `json:"privateSigning,omitempty"`
 	AnchorHashes   *AnchorHashes `json:"anchorHashes,omitempty"`
+	// LogIndexes are the Rekor log indexes carried in the bundle.
+	LogIndexes []string `json:"logIndexes,omitempty"`
 }
 
 type VerifyResult struct {
 	OK             bool           `json:"ok"`
+	Status         string         `json:"status,omitempty"`
 	Level          string         `json:"level,omitempty"`
+	Band           string         `json:"band,omitempty"`
 	ArtifactDigest string         `json:"artifactDigest"`
 	Source         string         `json:"source,omitempty"`
 	PolicyName     string         `json:"policyName,omitempty"`
@@ -74,6 +73,7 @@ type VerifyResult struct {
 type VerificationGate struct {
 	OK           bool
 	Level        string
+	Band         string
 	Source       string
 	PolicyName   string
 	PolicyDigest string
@@ -81,11 +81,25 @@ type VerificationGate struct {
 	Notes        []string
 }
 
+// VerifyOptions is the signed-policy hook on VerifyArtifact.
+// Leaving it zero keeps the v0.1 "revocation is not checked" note.
+type VerifyOptions struct {
+	Revocations           []*RevocationEntry
+	CheckRevocation       bool
+	Offline               bool
+	BaselinePolicyDigests map[string]string
+	ExpectedSource        string
+	PrivateMode           bool
+	AnchorReceipt         *AnchorReceipt
+}
+
 // Signer is the certificate identity that signed a bundle.
 type Signer struct {
-	SAN               string
-	Issuer            string
-	BuildSignerDigest string // "" when the certificate has no such extension
+	SAN                    string
+	Issuer                 string
+	BuildSignerDigest      string // "" when the certificate has no such extension
+	SourceRepositoryURI    string // OID 1.3.6.1.4.1.57264.1.12
+	SourceRepositoryDigest string // OID 1.3.6.1.4.1.57264.1.13
 }
 
 func MatchSigner(policy *TrustPolicy, s *Signer) *AcceptedSigner {
@@ -129,6 +143,16 @@ func canonicalSource(uri string) string {
 	return strings.ToLower(strings.TrimRight(NormalizeRepoURI(strings.TrimSpace(uri)), "/"))
 }
 
+var forgePublisherRe = regexp.MustCompile(`^https://(?:github\.com|gitlab\.com)/([^/]+/[^/]+)$`)
+
+func publisherKey(uri string) string {
+	c := canonicalSource(uri)
+	if m := forgePublisherRe.FindStringSubmatch(c); len(m) == 2 {
+		return m[1]
+	}
+	return c
+}
+
 // SourceMatches reports whether expected names the certificate's repository.
 // expected may be a full repository URL or an owner/repo (or host/owner/repo) shorthand.
 func SourceMatches(certificateURI, expected string) bool {
@@ -153,6 +177,88 @@ func SourceMatches(certificateURI, expected string) bool {
 	return path == flag
 }
 
+func DeriveStatementLevel(statement any) string {
+	checks, _ := predicateField(statement, "checks").(map[string]any)
+	if checks == nil {
+		return ""
+	}
+	checkResult := func(name string) string {
+		m, _ := checks[name].(map[string]any)
+		r, _ := m["result"].(string)
+		return r
+	}
+	if checkResult("provenance") != "pass" || checkResult("policy") != "pass" || checkResult("scan") != "pass" {
+		return ""
+	}
+	switch checkResult("tests") {
+	case "pass":
+		return "silver"
+	case "none":
+		return "banded"
+	default:
+		return ""
+	}
+}
+
+func predicateCommitAndPath(statement any) (commit, path string) {
+	src, _ := predicateField(statement, "source").(map[string]any)
+	commit, _ = src["commit"].(string)
+	path, _ = src["path"].(string)
+	return strings.ToLower(commit), path
+}
+
+func EvaluateGoldBundles(valid []BundleResult, notes []string) (level string, outNotes []string) {
+	outNotes = append([]string{}, notes...)
+	var silver []BundleResult
+	var anyValid bool
+	forges := map[Forge]bool{}
+	for _, b := range valid {
+		lvl := DeriveStatementLevel(b.Statement)
+		if lvl == "" {
+			continue
+		}
+		anyValid = true
+		if lvl == "silver" {
+			silver = append(silver, b)
+			forges[b.Forge] = true
+		}
+	}
+	if !anyValid {
+		return "", outNotes
+	}
+	level = "banded"
+	if len(silver) > 0 {
+		level = "silver"
+	}
+	if len(forges) >= 2 {
+		find := func(f Forge) *BundleResult {
+			for i := range silver {
+				if silver[i].Forge == f {
+					return &silver[i]
+				}
+			}
+			return nil
+		}
+		a, b := find(ForgeGitHub), find(ForgeGitLab)
+		if a != nil && b != nil {
+			commitA, pathA := predicateCommitAndPath(a.Statement)
+			commitB, pathB := predicateCommitAndPath(b.Statement)
+			sameCommit := commitA != "" && commitA == commitB && pathA == pathB
+			ca, errA := CanonicalJSON(predicateField(a.Statement, "checks"))
+			cb, errB := CanonicalJSON(predicateField(b.Statement, "checks"))
+			sameChecks := errA == nil && errB == nil && ca == cb
+			if !sameCommit {
+				outNotes = append(outNotes, "two forges signed, but their source commits differ — not Gold")
+			} else if !sameChecks {
+				outNotes = append(outNotes, "two forges signed, but their check results differ — not Gold")
+			} else {
+				level = "gold"
+			}
+		}
+	}
+	return level, outNotes
+}
+
 func worstStatus(statuses []string) string {
 	if slices.Contains(statuses, "reject") {
 		return "reject"
@@ -165,8 +271,11 @@ func worstStatus(statuses []string) string {
 
 // VerificationHeadline is the result line verify prints. It never includes a
 // baseline level unless the gate accepted the policy.
-func VerificationHeadline(ok bool, level, policyStatus string, notes []string) string {
+func VerificationHeadline(ok bool, level, policyStatus string, notes []string, band ...string) string {
 	if ok && level != "" {
+		if level == "banded" && len(band) > 0 && band[0] != "" {
+			return "VERIFIED · level " + level + " · band " + band[0]
+		}
 		return "VERIFIED · level " + level
 	}
 	hard := false
@@ -197,7 +306,7 @@ func uniqueNonEmpty(in []string) []string {
 
 // ApplyVerificationGates turns a cryptographically valid level into the result
 // a caller may print. A non-baseline policy never keeps silver, gold, or banded.
-func ApplyVerificationGates(level string, policies [][2]string, sources []string, expectedSource string, notes []string) VerificationGate {
+func ApplyVerificationGates(level string, policies [][2]string, sources []string, expectedSource string, notes []string, band ...string) VerificationGate {
 	outNotes := append([]string{}, notes...)
 	var statuses []string
 	var assessments [][3]string // status, name, digest; reason stored separately
@@ -219,8 +328,13 @@ func ApplyVerificationGates(level string, policies [][2]string, sources []string
 		policyName, policyDigest = assessments[0][1], assessments[0][2]
 	}
 	uniqueSources := uniqueNonEmpty(sources)
+	var pubKeys []string
+	for _, s := range uniqueSources {
+		pubKeys = append(pubKeys, publisherKey(s))
+	}
+	uniquePublishers := uniqueNonEmpty(pubKeys)
 	source := ""
-	if len(uniqueSources) == 1 {
+	if len(uniquePublishers) == 1 && len(uniqueSources) > 0 {
 		source = uniqueSources[0]
 	}
 	digestSeen := map[string]bool{}
@@ -234,7 +348,7 @@ func ApplyVerificationGates(level string, policies [][2]string, sources []string
 	if len(digests) > 1 {
 		outNotes = append(outNotes, "policy digests differ: "+strings.Join(digests, ", "))
 	}
-	if len(uniqueSources) > 1 {
+	if len(uniquePublishers) > 1 {
 		outNotes = append(outNotes, "publishers differ: "+strings.Join(uniqueSources, ", "))
 	}
 	if expectedSource != "" {
@@ -242,13 +356,18 @@ func ApplyVerificationGates(level string, policies [][2]string, sources []string
 		if len(urls) == 0 {
 			urls = []string{""}
 		}
-		for _, uri := range urls {
-			if !SourceMatches(uri, expectedSource) {
-				shown := uri
-				if shown == "" {
-					shown = "(none)"
+		crossForgeSamePublisher := len(uniquePublishers) == 1 && len(uniqueSources) > 1 && slices.ContainsFunc(urls, func(u string) bool {
+			return SourceMatches(u, expectedSource)
+		})
+		if !crossForgeSamePublisher {
+			for _, uri := range urls {
+				if !SourceMatches(uri, expectedSource) {
+					shown := uri
+					if shown == "" {
+						shown = "(none)"
+					}
+					outNotes = append(outNotes, "source mismatch: certificate is for "+shown+", --source is "+expectedSource)
 				}
-				outNotes = append(outNotes, "source mismatch: certificate is for "+shown+", --source is "+expectedSource)
 			}
 		}
 	}
@@ -268,6 +387,9 @@ func ApplyVerificationGates(level string, policies [][2]string, sources []string
 	if status == "baseline" && !hard {
 		gate.OK = true
 		gate.Level = level
+		if level == "banded" && len(band) > 0 && band[0] != "" {
+			gate.Band = band[0]
+		}
 	}
 	return gate
 }
@@ -352,7 +474,51 @@ func verifySigstoreMode(b *bundle.Bundle, tm root.TrustedMaterial, digestAlg str
 		return nil, fmt.Errorf("bundle is not signed by a Fulcio certificate")
 	}
 	c := res.Signature.Certificate
-	return &Signer{SAN: c.SubjectAlternativeName, Issuer: c.Extensions.Issuer, BuildSignerDigest: c.Extensions.BuildSignerDigest}, nil
+	return &Signer{
+		SAN:                    c.SubjectAlternativeName,
+		Issuer:                 c.Extensions.Issuer,
+		BuildSignerDigest:      c.Extensions.BuildSignerDigest,
+		SourceRepositoryURI:    c.Extensions.SourceRepositoryURI,
+		SourceRepositoryDigest: c.Extensions.SourceRepositoryDigest,
+	}, nil
+}
+
+// CheckCertificateSourceAndCommit compares the predicate's source URI and commit
+// against the Fulcio certificate's SourceRepositoryURI and SourceRepositoryDigest.
+func CheckCertificateSourceAndCommit(statement any, signer *Signer) string {
+	src, _ := predicateField(statement, "source").(map[string]any)
+	if src == nil {
+		return "statement has no source field"
+	}
+	uri, _ := src["uri"].(string)
+	commit, _ := src["commit"].(string)
+	if signer != nil && signer.SourceRepositoryURI != "" && canonicalSource(uri) != canonicalSource(signer.SourceRepositoryURI) {
+		return "certificate source URI mismatch: predicate claims " + uri + ", Fulcio certificate recorded " + signer.SourceRepositoryURI
+	}
+	if signer != nil && signer.SourceRepositoryDigest != "" && !strings.EqualFold(commit, signer.SourceRepositoryDigest) {
+		return "certificate source commit mismatch: predicate claims " + commit + ", Fulcio certificate recorded " + signer.SourceRepositoryDigest
+	}
+	return ""
+}
+
+func bundleLogIndexes(data []byte) []string {
+	var raw struct {
+		VerificationMaterial struct {
+			TlogEntries []struct {
+				LogIndex string `json:"logIndex"`
+			} `json:"tlogEntries"`
+		} `json:"verificationMaterial"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range raw.VerificationMaterial.TlogEntries {
+		if logIndexRe.MatchString(e.LogIndex) {
+			out = append(out, e.LogIndex)
+		}
+	}
+	return out
 }
 
 func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *TrustedMaterialSource) BundleResult {
@@ -360,8 +526,9 @@ func VerifyBundle(bundlePath, artifactDigest string, policy *TrustPolicy, tms *T
 }
 
 func VerifyBundleWithOptions(bundlePath, artifactDigest string, policy *TrustPolicy, tms *TrustedMaterialSource, opts VerifyOptions) BundleResult {
+	var indexes []string
 	fail := func(msg string, statement any) BundleResult {
-		return BundleResult{BundlePath: bundlePath, OK: false, Error: msg, Statement: statement}
+		return BundleResult{BundlePath: bundlePath, OK: false, Error: msg, Statement: statement, LogIndexes: indexes}
 	}
 	data, err := os.ReadFile(bundlePath)
 	if err != nil {
@@ -381,6 +548,7 @@ func VerifyBundleWithOptions(bundlePath, artifactDigest string, policy *TrustPol
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fail("cannot read bundle: "+err.Error(), nil)
 	}
+	indexes = bundleLogIndexes(data)
 	if raw.DSSEEnvelope == nil {
 		return fail("bundle has no DSSE envelope (not an attestation)", nil)
 	}
@@ -471,7 +639,26 @@ func VerifyBundleWithOptions(bundlePath, artifactDigest string, policy *TrustPol
 		}
 		return r
 	}
-	out := BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Statement: statement}
+	if mismatch := CheckCertificateSourceAndCommit(statement, signer); mismatch != "" {
+		r := fail(mismatch, statement)
+		r.Forge = accepted.Forge
+		r.SignerIdentity = signer.SAN
+		return r
+	}
+	derived := DeriveStatementLevel(statement)
+	if derived == "" {
+		r := fail("certificate checks did not pass", statement)
+		r.Forge = accepted.Forge
+		r.SignerIdentity = signer.SAN
+		return r
+	}
+	if predicateField(statement, "level") == "silver" && derived != "silver" {
+		r := fail("certificate claims level silver, but signed checks do not support silver", statement)
+		r.Forge = accepted.Forge
+		r.SignerIdentity = signer.SAN
+		return r
+	}
+	out := BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Statement: statement, LogIndexes: indexes}
 	if opts.PrivateMode {
 		out.PrivateSigning = &privateSigning
 		out.AnchorHashes = &anchorHashes
@@ -499,87 +686,98 @@ func predicateSource(statement any) string {
 	return uri
 }
 
-func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms *TrustedMaterialSource, expectedSource string) (*VerifyResult, error) {
-	return VerifyArtifactWithOptions(path, bundlePaths, policy, tms, expectedSource, VerifyOptions{})
+func policyDigestOf(statement any) string {
+	_, digest := predicatePolicy(statement)
+	return digest
 }
 
-func VerifyArtifactWithOptions(path string, bundlePaths []string, policy *TrustPolicy, tms *TrustedMaterialSource, expectedSource string, opts VerifyOptions) (*VerifyResult, error) {
+func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms *TrustedMaterialSource, opts ...VerifyOptions) (*VerifyResult, error) {
+	var opt VerifyOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	expectedSource := opt.ExpectedSource
 	d, err := DigestArtifact(path)
 	if err != nil {
 		return nil, err
 	}
 	notes := []string{"revocation is not checked in v0.1 (revocation ledger ships in v0.2)"}
-	if opts.PrivateMode {
+	if opt.Offline {
+		notes = []string{OfflineWarning}
+	} else if opt.CheckRevocation {
+		notes = []string{}
+	}
+	if opt.PrivateMode {
 		notes = append(notes, "verified in private mode (hash-only public anchor preserves confidentiality)")
 	}
 	res := &VerifyResult{
 		ArtifactDigest: d.SHA256,
-		PrivateMode:    opts.PrivateMode,
-		Anchor:         opts.AnchorReceipt,
+		PrivateMode:    opt.PrivateMode,
+		Anchor:         opt.AnchorReceipt,
 		Bundles:        []BundleResult{},
 		Notes:          notes,
 	}
 	var valid []BundleResult
+	revoked := false
 	for _, bp := range bundlePaths {
-		r := VerifyBundleWithOptions(bp, d.SHA256, policy, tms, opts)
+		r := VerifyBundleWithOptions(bp, d.SHA256, policy, tms, opt)
+		if r.OK && opt.CheckRevocation && !opt.Offline {
+			if msg := RevocationError(opt.Revocations, d.SHA256, r.LogIndexes); msg != "" {
+				r.OK = false
+				r.Error = msg
+			}
+		}
+		if r.OK && BaselineRejected(policyDigestOf(r.Statement), opt.BaselinePolicyDigests) {
+			r.OK = false
+			r.Error = "policy digest is not in the signed trust policy"
+		}
+		if strings.HasPrefix(r.Error, "REVOKED:") {
+			revoked = true
+		}
 		res.Bundles = append(res.Bundles, r)
 		if r.OK {
 			valid = append(valid, r)
 		}
 	}
 	if len(valid) == 0 {
+		res.Status = "rejected"
+		if revoked {
+			res.Status = "REVOKED"
+		}
 		return res, nil
 	}
 	res.OK = true
+	res.Status = "verified"
 
-	// Gold: two forges, silver on both, identical checks (spec §4).
-	var silver []BundleResult
-	forges := map[Forge]bool{}
-	for _, b := range valid {
-		if predicateField(b.Statement, "level") == "silver" {
-			silver = append(silver, b)
-			forges[b.Forge] = true
-		}
-	}
-	res.Level = "banded"
-	if len(silver) > 0 {
-		res.Level = "silver"
-	}
-	if len(forges) >= 2 {
-		find := func(f Forge) *BundleResult {
-			for i := range silver {
-				if silver[i].Forge == f {
-					return &silver[i]
-				}
-			}
-			return nil
-		}
-		a, b := find(ForgeGitHub), find(ForgeGitLab)
-		same := false
-		if a != nil && b != nil {
-			ca, errA := CanonicalJSON(predicateField(a.Statement, "checks"))
-			cb, errB := CanonicalJSON(predicateField(b.Statement, "checks"))
-			same = errA == nil && errB == nil && ca == cb
-		}
-		if same {
-			res.Level = "gold"
-		} else {
-			res.Notes = append(res.Notes, "two forges signed, but their check results differ — not Gold")
-		}
+	res.Level, res.Notes = EvaluateGoldBundles(valid, res.Notes)
+	if res.Level == "" {
+		res.OK = false
+		res.Status = "rejected"
+		return res, nil
 	}
 	policies := make([][2]string, len(valid))
 	sources := make([]string, len(valid))
+	band := ""
 	for i, b := range valid {
 		policies[i][0], policies[i][1] = predicatePolicy(b.Statement)
 		sources[i] = predicateSource(b.Statement)
+		if res.Level == "banded" && band == "" {
+			if bv, ok := predicateField(b.Statement, "band").(string); ok {
+				band = bv
+			}
+		}
 	}
-	gate := ApplyVerificationGates(res.Level, policies, sources, expectedSource, res.Notes)
+	gate := ApplyVerificationGates(res.Level, policies, sources, expectedSource, res.Notes, band)
 	res.OK = gate.OK
 	res.Level = gate.Level
+	res.Band = gate.Band
 	res.Source = gate.Source
 	res.PolicyName = gate.PolicyName
 	res.PolicyDigest = gate.PolicyDigest
 	res.PolicyStatus = gate.PolicyStatus
 	res.Notes = gate.Notes
+	if !gate.OK {
+		res.Status = "rejected"
+	}
 	return res, nil
 }

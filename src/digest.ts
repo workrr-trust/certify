@@ -11,6 +11,7 @@ export type ArtifactDigest = {
   algorithm: DigestAlgorithm;
   sha256: string;
   files: ArtifactFile[];
+  symlinkTargets?: Map<string, string>;
 };
 
 export function sha256Hex(data: string | Buffer): string {
@@ -33,6 +34,7 @@ export async function digestArtifact(root: string): Promise<ArtifactDigest> {
   if (!st.isDirectory()) throw new Error(`Not a file or directory: ${root}`);
 
   const files: ArtifactFile[] = [];
+  const symlinkTargets = new Map<string, string>();
   async function walk(dir: string, rel: string): Promise<void> {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       if (entry.name === ".git") continue;
@@ -40,6 +42,7 @@ export async function digestArtifact(root: string): Promise<ArtifactDigest> {
       const relPath = rel ? `${rel}/${entry.name}` : entry.name;
       if (entry.isSymbolicLink()) {
         const target = await readlink(abs);
+        symlinkTargets.set(relPath, target);
         files.push({ path: relPath, sha256: sha256Hex(target), size: Buffer.byteLength(target) });
       } else if (entry.isDirectory()) {
         await walk(abs, relPath);
@@ -53,7 +56,7 @@ export async function digestArtifact(root: string): Promise<ArtifactDigest> {
   if (files.length === 0) throw new Error(`Artifact directory is empty: ${root}`);
   files.sort((a, b) => byteOrder(a.path, b.path));
   const manifest = files.map((f) => `${f.sha256}  ${f.path}\n`).join("");
-  return { algorithm: "workrr-dirhash-v1", sha256: sha256Hex(manifest), files };
+  return { algorithm: "workrr-dirhash-v1", sha256: sha256Hex(manifest), files, symlinkTargets };
 }
 
 export function canonicalJson(value: unknown): string {

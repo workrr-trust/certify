@@ -1,0 +1,7 @@
+{
+  "name": "workrr certify",
+  "description": "Certify a public AI agent artifact with the workrr reusable workflow at a trusted tag. The Marketplace action does not sign.",
+  "iconName": "shield",
+  "categories": ["Security"],
+  "filePatterns": ["SKILL\\.md$", "workrr\\.json$"]
+}

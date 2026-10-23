@@ -1,0 +1,145 @@
+{
+  "$comment": "Shared trust-feed vectors. Payloads are canonical JSON. Signatures are ed25519 from the test seed in generate.mjs; production verifiers do not accept that key.",
+  "publicKey": "wkSVU2AapmiTyG9SWR2xQoQGsuL9lkek5eKqTCV+JkU=",
+  "cases": [
+    {
+      "id": "valid-policy",
+      "op": "policy",
+      "floorSequence": 1,
+      "blob": {
+        "mediaType": "application/vnd.workrr.signed-blob+json;version=1",
+        "payloadType": "application/vnd.workrr.trust-policy+json",
+        "payload": "eyJiYXNlbGluZVBvbGljeURpZ2VzdHMiOnsid29ya3JyLWJhc2VsaW5lLXYwLjEiOiJzaGEyNTY6NGNmNzNmYTQ4NzY3YzFhMmMzOGVkNTVlZDliNjAxNjA5Y2JiZjU3OWFhMjgzZDVmNzI4ODY3ZDk0NWY1N2QxOSJ9LCJpc3N1ZWRBdCI6IjIwMjYtMTAtMjJUMDA6MDA6MDBaIiwicmV2b2NhdGlvbkZlZWQiOiJodHRwczovL3RydXN0LWFwaS53b3JrcnIuYWkvdjEvcmV2b2NhdGlvbnMiLCJyZXZvY2F0aW9uSGVhZCI6IjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJyZXZvY2F0aW9uV2F0ZXJtYXJrIjowLCJzY2hlbWEiOiJ3b3JrcnItdHJ1c3QtcG9saWN5LXYxIiwic2VxdWVuY2UiOjIsInNpZ25lcnMiOlt7ImJ1aWxkU2lnbmVyRGlnZXN0cyI6WyI5ZmJlM2U0NTNjYmQ4MGJlZjAzMDFmMDhkYjc5NDA4YmIxMmM3ZDY0Il0sImZvcmdlIjoiZ2l0aHViIiwiaXNzdWVyIjoiaHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbSIsInN1YmplY3RBbHRlcm5hdGl2ZU5hbWUiOiJeaHR0cHM6Ly9naXRodWJcXC5jb20vd29ya3JyLXRydXN0L2NlcnRpZnkvXFwuZ2l0aHViL3dvcmtmbG93cy9jZXJ0aWZ5XFwueW1sQHJlZnMvdGFncy92MFxcLjFcXC4wJCJ9LHsiYnVpbGRTaWduZXJEaWdlc3RzIjpbIjc4ZDhjMWE5OGM5MjliN2IxYzFiNTMyYzI1MjU2NTgyYTg0ODg3YjEiXSwiZm9yZ2UiOiJnaXRodWIiLCJpc3N1ZXIiOiJodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwic3ViamVjdEFsdGVybmF0aXZlTmFtZSI6Il5odHRwczovL2dpdGh1YlxcLmNvbS93b3JrcnItdHJ1c3QvY2VydGlmeS9cXC5naXRodWIvd29ya2Zsb3dzL2NlcnRpZnlcXC55bWxAcmVmcy90YWdzL3YwXFwuMVxcLjEkIn1dfQ==",
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKey": "wkSVU2AapmiTyG9SWR2xQoQGsuL9lkek5eKqTCV+JkU=",
+          "sig": "XnqyRWeEPQ80+kj2zwfQxmmdO13EeiOXXthmvXGWJ1Yj9rGt7nXR4XCuTONYNZ7ZuKn5Wz/p53xYcdFt54rwAQ=="
+        }
+      },
+      "expect": {
+        "ok": true,
+        "sequence": 2,
+        "schema": "workrr-trust-policy-v1"
+      }
+    },
+    {
+      "id": "tampered-policy",
+      "op": "policy",
+      "floorSequence": 1,
+      "blob": {
+        "mediaType": "application/vnd.workrr.signed-blob+json;version=1",
+        "payloadType": "application/vnd.workrr.trust-policy+json",
+        "payload": "eyJiYXNlbGluZVBvbGljeURpZ2VzdHMiOnsid29ya3JyLWJhc2VsaW5lLXYwLjEiOiJzaGEyNTY6NGNmNzNmYTQ4NzY3YzFhMmMzOGVkNTVlZDliNjAxNjA5Y2JiZjU3OWFhMjgzZDVmNzI4ODY3ZDk0NWY1N2QxOSJ9LCJpc3N1ZWRBdCI6IjIwMjYtMTAtMjJUMDA6MDA6MDBaIiwicmV2b2NhdGlvbkZlZWQiOiJodHRwczovL3RydXN0LWFwaS53b3JrcnIuYWkvdjEvcmV2b2NhdGlvbnMiLCJyZXZvY2F0aW9uSGVhZCI6IjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJyZXZvY2F0aW9uV2F0ZXJtYXJrIjowLCJzY2hlbWEiOiJ3b3JrcnItdHJ1c3QtcG9saWN5LXYxIiwic2VxdWVuY2UiOjksInNpZ25lcnMiOlt7ImJ1aWxkU2lnbmVyRGlnZXN0cyI6WyI5ZmJlM2U0NTNjYmQ4MGJlZjAzMDFmMDhkYjc5NDA4YmIxMmM3ZDY0Il0sImZvcmdlIjoiZ2l0aHViIiwiaXNzdWVyIjoiaHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbSIsInN1YmplY3RBbHRlcm5hdGl2ZU5hbWUiOiJeaHR0cHM6Ly9naXRodWJcXC5jb20vd29ya3JyLXRydXN0L2NlcnRpZnkvXFwuZ2l0aHViL3dvcmtmbG93cy9jZXJ0aWZ5XFwueW1sQHJlZnMvdGFncy92MFxcLjFcXC4wJCJ9LHsiYnVpbGRTaWduZXJEaWdlc3RzIjpbIjc4ZDhjMWE5OGM5MjliN2IxYzFiNTMyYzI1MjU2NTgyYTg0ODg3YjEiXSwiZm9yZ2UiOiJnaXRodWIiLCJpc3N1ZXIiOiJodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwic3ViamVjdEFsdGVybmF0aXZlTmFtZSI6Il5odHRwczovL2dpdGh1YlxcLmNvbS93b3JrcnItdHJ1c3QvY2VydGlmeS9cXC5naXRodWIvd29ya2Zsb3dzL2NlcnRpZnlcXC55bWxAcmVmcy90YWdzL3YwXFwuMVxcLjEkIn1dfQ==",
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKey": "wkSVU2AapmiTyG9SWR2xQoQGsuL9lkek5eKqTCV+JkU=",
+          "sig": "XnqyRWeEPQ80+kj2zwfQxmmdO13EeiOXXthmvXGWJ1Yj9rGt7nXR4XCuTONYNZ7ZuKn5Wz/p53xYcdFt54rwAQ=="
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "signature invalid"
+      }
+    },
+    {
+      "id": "rollback",
+      "op": "policy",
+      "floorSequence": 3,
+      "blob": {
+        "mediaType": "application/vnd.workrr.signed-blob+json;version=1",
+        "payloadType": "application/vnd.workrr.trust-policy+json",
+        "payload": "eyJiYXNlbGluZVBvbGljeURpZ2VzdHMiOnsid29ya3JyLWJhc2VsaW5lLXYwLjEiOiJzaGEyNTY6NGNmNzNmYTQ4NzY3YzFhMmMzOGVkNTVlZDliNjAxNjA5Y2JiZjU3OWFhMjgzZDVmNzI4ODY3ZDk0NWY1N2QxOSJ9LCJpc3N1ZWRBdCI6IjIwMjYtMTAtMjJUMDA6MDA6MDBaIiwicmV2b2NhdGlvbkZlZWQiOiJodHRwczovL3RydXN0LWFwaS53b3JrcnIuYWkvdjEvcmV2b2NhdGlvbnMiLCJyZXZvY2F0aW9uSGVhZCI6IjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJyZXZvY2F0aW9uV2F0ZXJtYXJrIjowLCJzY2hlbWEiOiJ3b3JrcnItdHJ1c3QtcG9saWN5LXYxIiwic2VxdWVuY2UiOjEsInNpZ25lcnMiOlt7ImJ1aWxkU2lnbmVyRGlnZXN0cyI6WyI5ZmJlM2U0NTNjYmQ4MGJlZjAzMDFmMDhkYjc5NDA4YmIxMmM3ZDY0Il0sImZvcmdlIjoiZ2l0aHViIiwiaXNzdWVyIjoiaHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbSIsInN1YmplY3RBbHRlcm5hdGl2ZU5hbWUiOiJeaHR0cHM6Ly9naXRodWJcXC5jb20vd29ya3JyLXRydXN0L2NlcnRpZnkvXFwuZ2l0aHViL3dvcmtmbG93cy9jZXJ0aWZ5XFwueW1sQHJlZnMvdGFncy92MFxcLjFcXC4wJCJ9LHsiYnVpbGRTaWduZXJEaWdlc3RzIjpbIjc4ZDhjMWE5OGM5MjliN2IxYzFiNTMyYzI1MjU2NTgyYTg0ODg3YjEiXSwiZm9yZ2UiOiJnaXRodWIiLCJpc3N1ZXIiOiJodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwic3ViamVjdEFsdGVybmF0aXZlTmFtZSI6Il5odHRwczovL2dpdGh1YlxcLmNvbS93b3JrcnItdHJ1c3QvY2VydGlmeS9cXC5naXRodWIvd29ya2Zsb3dzL2NlcnRpZnlcXC55bWxAcmVmcy90YWdzL3YwXFwuMVxcLjEkIn1dfQ==",
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKey": "wkSVU2AapmiTyG9SWR2xQoQGsuL9lkek5eKqTCV+JkU=",
+          "sig": "3Bh2SEZk0IrjQngJ7MTUYewMZKM1XfETx6riwoyT6lhuSHaQUxG9soSuG0flemChfFMzzo+0Gj1wlLgBZGkSCg=="
+        }
+      },
+      "expect": {
+        "ok": false,
+        "error": "ROLLBACK: trust policy sequence 1 is older than 3"
+      }
+    },
+    {
+      "id": "revoked-certificate",
+      "op": "revocation",
+      "artifactDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "logIndexes": [],
+      "watermark": 0,
+      "revocationHead": "0000000000000000000000000000000000000000000000000000000000000000",
+      "entries": [
+        {
+          "mediaType": "application/vnd.workrr.signed-blob+json;version=1",
+          "payloadType": "application/vnd.workrr.revocation-entry+json",
+          "payload": "eyJwcmV2IjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsInJlYXNvbiI6ImNvbXByb21pc2VkIGNlcnRpZmllciIsInNjaGVtYSI6Indvcmtyci1yZXZvY2F0aW9uLXYxIiwic2VxdWVuY2UiOjEsInNpZ25lciI6Imh0dHBzOi8vZ2l0aHViLmNvbS93b3JrcnItdHJ1c3QvY2VydGlmeS8uZ2l0aHViL3dvcmtmbG93cy9yZXZva2UueW1sQHJlZnMvdGFncy92MC4xLjEiLCJzdWJqZWN0Ijp7ImFydGlmYWN0RGlnZXN0IjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSJ9LCJ0aW1lc3RhbXAiOiIyMDI2LTEwLTIyVDEyOjAwOjAwWiJ9",
+          "signature": {
+            "algorithm": "ed25519",
+            "publicKey": "wkSVU2AapmiTyG9SWR2xQoQGsuL9lkek5eKqTCV+JkU=",
+            "sig": "H92P8h+uO6AW3xA5FJAsgtQkGF9Tdshw8DLyGXooT2amGc+4s8NqEqmuoQYwxiXzszYvm7xsEj5gC0RC1L1RDw=="
+          }
+        }
+      ],
+      "checkpoint": {
+        "mediaType": "application/vnd.workrr.signed-blob+json;version=1",
+        "payloadType": "application/vnd.workrr.revocation-checkpoint+json",
+        "payload": "eyJoZWFkIjoiZTUyYmI1MDU5YjM4M2Y5YmM3ZGQ5MTVhMTZkMDhmNzllYWYxMmNhOGQyY2U2NzNlMjM1NWExNDZlZTNhMjhmZCIsInNjaGVtYSI6Indvcmtyci1yZXZvY2F0aW9uLWNoZWNrcG9pbnQtdjEiLCJzZXF1ZW5jZSI6MSwic2lnbmVyIjoiaHR0cHM6Ly9naXRodWIuY29tL3dvcmtyci10cnVzdC9jZXJ0aWZ5Ly5naXRodWIvd29ya2Zsb3dzL3Jldm9rZS55bWxAcmVmcy90YWdzL3YwLjEuMSIsInRpbWVzdGFtcCI6IjIwMjYtMTAtMjJUMTI6MDA6MDFaIn0=",
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKey": "wkSVU2AapmiTyG9SWR2xQoQGsuL9lkek5eKqTCV+JkU=",
+          "sig": "WmSVREMccyUg1SLSpK2iDN6SEJHEfxwmVFCJP8Mh80oQBeR12Yx0JlX1fu1xuaow9lG9/F5/oZCTRAscqZ3JDg=="
+        }
+      },
+      "expect": {
+        "ok": false,
+        "status": "REVOKED",
+        "reason": "compromised certifier"
+      }
+    },
+    {
+      "id": "revoked-log-index",
+      "op": "revocation",
+      "artifactDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "logIndexes": [
+        "1697019812"
+      ],
+      "watermark": 0,
+      "revocationHead": "0000000000000000000000000000000000000000000000000000000000000000",
+      "entries": [
+        {
+          "mediaType": "application/vnd.workrr.signed-blob+json;version=1",
+          "payloadType": "application/vnd.workrr.revocation-entry+json",
+          "payload": "eyJwcmV2IjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsInJlYXNvbiI6ImNlcnRpZmljYXRlIGxvZyBlbnRyeSB3aXRoZHJhd24iLCJzY2hlbWEiOiJ3b3JrcnItcmV2b2NhdGlvbi12MSIsInNlcXVlbmNlIjoxLCJzaWduZXIiOiJodHRwczovL2dpdGh1Yi5jb20vd29ya3JyLXRydXN0L2NlcnRpZnkvLmdpdGh1Yi93b3JrZmxvd3MvcmV2b2tlLnltbEByZWZzL3RhZ3MvdjAuMS4xIiwic3ViamVjdCI6eyJsb2dJbmRleCI6IjE2OTcwMTk4MTIifSwidGltZXN0YW1wIjoiMjAyNi0xMC0yMlQxMjowMDowMFoifQ==",
+          "signature": {
+            "algorithm": "ed25519",
+            "publicKey": "wkSVU2AapmiTyG9SWR2xQoQGsuL9lkek5eKqTCV+JkU=",
+            "sig": "ctg0aiNd5S0nQmbqd2dSfZPs6s25U2/ba4q4q9B6I6fhPQA5dunPe7HiQGNLDO/vC+KK9iIExohIfcujdRAdDg=="
+          }
+        }
+      ],
+      "checkpoint": {
+        "mediaType": "application/vnd.workrr.signed-blob+json;version=1",
+        "payloadType": "application/vnd.workrr.revocation-checkpoint+json",
+        "payload": "eyJoZWFkIjoiMmM2ZDMwZTA4NTY5NzViOWFmYWZjN2VjZTg5NDI4Y2I2NjVmMGMxN2FlMzYyM2RlYTk1NTgwZjhhNDM4MzY2NiIsInNjaGVtYSI6Indvcmtyci1yZXZvY2F0aW9uLWNoZWNrcG9pbnQtdjEiLCJzZXF1ZW5jZSI6MSwic2lnbmVyIjoiaHR0cHM6Ly9naXRodWIuY29tL3dvcmtyci10cnVzdC9jZXJ0aWZ5Ly5naXRodWIvd29ya2Zsb3dzL3Jldm9rZS55bWxAcmVmcy90YWdzL3YwLjEuMSIsInRpbWVzdGFtcCI6IjIwMjYtMTAtMjJUMTI6MDA6MDFaIn0=",
+        "signature": {
+          "algorithm": "ed25519",
+          "publicKey": "wkSVU2AapmiTyG9SWR2xQoQGsuL9lkek5eKqTCV+JkU=",
+          "sig": "Ug41Z7/HCwT7bJptVxs1AlVHLEFtopgDeAkYHFaIGm/Zg2rpCJSsUKa+7zRrIFtdtEAHpOf6NevIzOZevxvJBg=="
+        }
+      },
+      "expect": {
+        "ok": false,
+        "status": "REVOKED",
+        "reason": "certificate log entry withdrawn"
+      }
+    },
+    {
+      "id": "offline-fallback",
+      "op": "offline",
+      "expect": {
+        "source": "embedded",
+        "revocationChecked": false,
+        "warning": "offline: using the embedded trust policy; revocation was not checked"
+      }
+    }
+  ]
+}

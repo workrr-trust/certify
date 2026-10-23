@@ -21,7 +21,8 @@ type ArtifactFile struct {
 	SHA256 string `json:"sha256"`
 	Size   int    `json:"size"`
 	// abs is where the bytes live on disk (paths are decoded for the manifest).
-	abs string
+	abs           string
+	symlinkTarget *string
 }
 
 type ArtifactDigest struct {
@@ -77,7 +78,7 @@ func DigestArtifact(root string) (*ArtifactDigest, error) {
 					return err
 				}
 				t := DecodeUTF8([]byte(target))
-				files = append(files, ArtifactFile{Path: relPath, SHA256: SHA256Hex([]byte(t)), Size: len(t), abs: abs})
+				files = append(files, ArtifactFile{Path: relPath, SHA256: SHA256Hex([]byte(t)), Size: len(t), abs: abs, symlinkTarget: &t})
 			case e.IsDir():
 				if err := walk(abs, relPath); err != nil {
 					return err
