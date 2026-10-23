@@ -180,6 +180,9 @@ npx @workrr-trust/certify verify ./my-skill --bundle certificate.sigstore.json
 # Go
 go install github.com/workrr-trust/certify/go/cmd/workrr@latest
 workrr verify ./my-skill --bundle certificate.sigstore.json
+
+# Machine-readable JSON output (ok, level, artifactDigest, source, policyName, policyDigest, policyStatus, bundles, notes)
+npx @workrr-trust/certify verify ./my-skill --bundle certificate.sigstore.json --json
 ```
 
 Prebuilt binaries for Linux, macOS and Windows are attached to each

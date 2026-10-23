@@ -31,7 +31,8 @@ Usage:
            certifier identity, and revocation. Reports the policy name and digest.
            A policy that is not the baseline does not verify at a baseline level.
            --source fails when the certificate's publisher repo does not match.
-           The built-in trust set has no second forge, so it does not award Gold.
+           --json prints the structured VerifyResult JSON (ok, level, artifactDigest,
+           source, policyName, policyDigest, policyStatus, bundles, notes).
            Fetches the signed trust policy from the trust API and caches it for 1 hour.
            --offline uses the policy embedded in this build and does not check
            revocation. It prints:

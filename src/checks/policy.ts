@@ -51,6 +51,9 @@ export function checkPolicy(artifact: Artifact, policy: Policy = BASELINE_POLICY
     const ext = f.path.includes(".") ? f.path.slice(f.path.lastIndexOf(".")).toLowerCase() : "";
     if (policy.forbiddenExtensions?.includes(ext)) violations.push(`forbidden file type: ${f.path}`);
   }
+  for (const sym of artifact.escapingSymlinks ?? []) {
+    violations.push(`symlink points outside artifact directory: ${sym}`);
+  }
   if (artifact.type === "skill") {
     const fm = artifact.frontmatter;
     if (!fm) violations.push("SKILL.md has no parseable YAML frontmatter");

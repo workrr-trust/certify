@@ -155,6 +155,9 @@ func isDefensiveExample(ruleID, file, lineText string, colBytes int) bool {
 func ScanArtifact(a *Artifact, exceptions ...[]ScanException) ScanResult {
 	findings := []Finding{}
 	for _, f := range a.Digest.Files {
+		if slices.Contains(a.EscapingSymlinks, f.Path) {
+			continue
+		}
 		p := a.Root
 		if a.IsDirectory {
 			p = f.abs

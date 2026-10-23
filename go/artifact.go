@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -31,7 +32,24 @@ type Artifact struct {
 	Type        ArtifactType
 	Digest      *ArtifactDigest
 	// Frontmatter is nil when SKILL.md has no parseable YAML mapping.
-	Frontmatter map[string]any
+	Frontmatter      map[string]any
+	EscapingSymlinks []string
+}
+
+var winDriveRe = regexp.MustCompile(`^[a-zA-Z]:[\\/]`)
+
+func SymlinkEscapesRoot(relPath, target string) bool {
+	if target == "" || strings.HasPrefix(target, "/") || winDriveRe.MatchString(target) {
+		return true
+	}
+	norm := strings.ReplaceAll(target, "\\", "/")
+	parent := path.Dir(relPath)
+	combined := norm
+	if parent != "." {
+		combined = parent + "/" + norm
+	}
+	resolved := path.Clean(combined)
+	return resolved == ".." || strings.HasPrefix(resolved, "../")
 }
 
 func LoadArtifact(root string) (*Artifact, error) {
@@ -95,11 +113,16 @@ func LoadArtifact(root string) (*Artifact, error) {
 			}
 		}
 	}
+	for _, f := range digest.Files {
+		if f.symlinkTarget != nil && SymlinkEscapesRoot(f.Path, *f.symlinkTarget) {
+			a.EscapingSymlinks = append(a.EscapingSymlinks, f.Path)
+		}
+	}
 	return a, nil
 }
 
 // Same expression as the TypeScript reference; RE2 handles it unchanged.
-var frontmatterRe = regexp.MustCompile(`^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n)?`)
+var frontmatterRe = regexp.MustCompile("^\uFEFF?---\\r?\\n([\\s\\S]*?)\\r?\\n---(?:\\r?\\n)?")
 
 // ParseFrontmatter returns the YAML mapping between the leading `---` fences.
 // A YAML sequence counts as parseable but has no fields (JavaScript arrays are

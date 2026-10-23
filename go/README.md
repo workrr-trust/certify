@@ -33,7 +33,9 @@ workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.j
 `verify --offline` uses the embedded trust policy and does not check revocation.
 It prints `offline: using the embedded trust policy; revocation was not checked`.
 `verify --trusted-root trusted_root.json` pins a Sigstore trusted root instead of
-fetching the public-good root via TUF (useful with `--offline`, or air-gapped).
+fetching the public-good root via TUF (useful with `--offline`, or air-gapped). Pass
+`--json` to print the structured `VerifyResult` JSON (`ok`, `level`, `artifactDigest`,
+`source`, `policyName`, `policyDigest`, `policyStatus`, `bundles`, `notes`).
 
 ## Verification
 
