@@ -91,6 +91,14 @@ The authority is **a policy, not a server**.
     `workrr-trust/certify-gitlab` project whose top-level `.gitlab-ci.yml` is the
     certifier, pinned by the trust policy to project + ref + commit. That project
     does not exist, and the v0.1.2 built-in policy does not list it.
+- **Marketplace action is verify-only.** GitHub Marketplace lists a root
+  `action.yml`. A composite action runs inside the caller's job, so a
+  certificate it signed would carry the caller's `job_workflow_ref`, not
+  `certify.yml@refs/tags/v0.1.x`. The trust policy would reject it. The root
+  action only verifies a bundle the caller already has, and it fails the job
+  when the level or source misses. It does not take a replacement trust
+  policy, so a workflow cannot point it at a weaker signer. Publishers still
+  call the reusable workflow at the pinned tags.
 - **The certifier is public code.** Anyone can read exactly what produced a
   certificate. Changing the checks means a new commit, which is a new, visible
   identity.
@@ -224,8 +232,12 @@ publicly provable, but their content, names, and policies never leave the custom
 Customers **install the certifier into their CI**. They don't grant workrr access to
 their code.
 
-- **GitHub:** reusable workflow / Action (`workrr-trust/certify@<sha>`). Their
-  workflow identity signs; workrr never sees source.
+- **GitHub:** publishers call the reusable workflow
+  `workrr-trust/certify/.github/workflows/certify.yml` at a tag the trust
+  policy pins (`v0.1.0` or `v0.1.1`). Fulcio records that workflow, not the
+  caller, and workrr never sees source. The Marketplace action
+  (`workrr-trust/certify@<sha>`) only verifies a certificate the caller
+  already has. It does not sign.
 - **GitLab:** the customer adds the certifier steps to their own top-level
   `.gitlab-ci.yml`, vendored at a pinned commit. A remote include or component can't
   hold the `id_tokens` that keyless signing needs. The cert identity is then the

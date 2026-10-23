@@ -26,3 +26,8 @@ authority. Access is limited to a small set of org admins. The built-in trust po
 accepts only the released tags v0.1.0 and v0.1.1, each pinned to its Build Signer
 Digest, and workflow actions are pinned by commit SHA. Distributing that policy as a
 TUF-signed file under the offline root key is still planned for v0.2.
+
+The root `action.yml` is a verifier. It does not request an OIDC token and it does
+not attest. A composite action runs inside the caller's job, so a certificate minted
+there would name the caller, which this policy rejects. The action also has no input
+that replaces the built-in signer set.

@@ -1,0 +1,89 @@
+# workrr verify — consumer gate for the GitHub Marketplace.
+#
+# This file is verify-only. It must not sign or request an OIDC token.
+# Certificates are trusted by the Fulcio identity of
+# .github/workflows/certify.yml at refs/tags/v0.1.0 and v0.1.1 (Build Signer
+# Digest pinned in the trust policy). A composite action runs inside the
+# caller's job, so a certificate minted here would name the caller and would
+# not verify.
+#
+# There is no input that replaces the built-in signer set. That set is the
+# policy in the commit the caller pinned. A pull request cannot point this
+# gate at a different signer without changing that pin.
+#
+# Callers should grant contents: read only.
+name: workrr verify
+description: >-
+  Fail the job unless an artifact has a workrr certificate at the required
+  level and source. This action only verifies; it does not sign.
+branding:
+  icon: shield
+  color: blue
+inputs:
+  path:
+    description: >-
+      Path to the artifact (file or directory), relative to the job workspace
+      or absolute. The action does not check out a repository and does not run
+      the artifact's tests.
+    required: true
+  bundle:
+    description: >-
+      Path to a Sigstore bundle (certificate.sigstore.json). Put one path per
+      line for more than one bundle. Gold compares two bundles. The built-in
+      trust policy has no second forge, so level gold fails closed.
+    required: true
+  source:
+    description: >-
+      Publisher repository the certificate must name. Accepts owner/repo,
+      host/owner/repo, or a repository URL.
+    required: true
+  level:
+    description: >-
+      Minimum level: banded, silver, or gold. A higher certificate level
+      satisfies a lower minimum. Defaults to silver.
+    required: false
+    default: silver
+outputs:
+  verified:
+    description: true only when the certificate verifies and meets level and source.
+    value: ${{ steps.verify.outputs.verified }}
+  level:
+    description: >-
+      Certificate level when the signature and the baseline policy passed.
+      Empty when they did not. Still set when the level is below the minimum,
+      so the log shows what the certificate was.
+    value: ${{ steps.verify.outputs.level }}
+  source:
+    description: Publisher repository recorded on the certificate.
+    value: ${{ steps.verify.outputs.source }}
+  policy-name:
+    description: Policy name recorded on the certificate.
+    value: ${{ steps.verify.outputs.policy-name }}
+  policy-digest:
+    description: Policy digest recorded on the certificate.
+    value: ${{ steps.verify.outputs.policy-digest }}
+  artifact-digest:
+    description: sha256 digest the verifier computed for the artifact, prefixed with sha256:.
+    value: ${{ steps.verify.outputs.artifact-digest }}
+  signer:
+    description: Fulcio SAN of each accepted bundle, comma-separated.
+    value: ${{ steps.verify.outputs.signer }}
+  headline:
+    description: VERIFIED · level <level>, NOT VERIFIED, or custom policy, not baseline.
+    value: ${{ steps.verify.outputs.headline }}
+runs:
+  using: composite
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 24
+    - name: Verify workrr certificate
+      id: verify
+      shell: bash
+      env:
+        WORKRR_PATH: ${{ inputs.path }}
+        WORKRR_BUNDLE: ${{ inputs.bundle }}
+        WORKRR_SOURCE: ${{ inputs.source }}
+        WORKRR_LEVEL: ${{ inputs.level }}
+      run: bash "$GITHUB_ACTION_PATH/action/verify.sh"
