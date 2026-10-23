@@ -2,7 +2,7 @@
 // (chain, signature, Rekor inclusion) → signer identity against the trust policy.
 import { readFile } from "node:fs/promises";
 import { verify as sigstoreVerify } from "sigstore";
-import { PREDICATE_TYPE, type Statement } from "./certify.js";
+import { PREDICATE_TYPE, type Statement, type TrustBand } from "./certify.js";
 import { BASELINE_POLICY, BASELINE_POLICY_NAME } from "./checks/policy.js";
 import { normalizeRepoUri } from "./checks/provenance.js";
 import { canonicalJson, digestArtifact, jsonDigest } from "./digest.js";
@@ -24,6 +24,7 @@ export type PolicyStatus = "baseline" | "custom" | "reject";
 export type VerifyResult = {
   ok: boolean;
   level?: "gold" | "silver" | "banded";
+  band?: TrustBand;
   artifactDigest: string;
   source?: string;
   policyName?: string;
@@ -36,6 +37,7 @@ export type VerifyResult = {
 export type VerificationGate = {
   ok: boolean;
   level?: VerifyResult["level"];
+  band?: TrustBand;
   source?: string;
   policyName?: string;
   policyDigest?: string;
@@ -142,8 +144,11 @@ export function sourceMatches(certificateURI: string, expected: string): boolean
   return got.replace(/^https?:\/\/[^/]+\//, "") === flag;
 }
 
-export function verificationHeadline(r: { ok: boolean; level?: string; policyStatus?: PolicyStatus; notes: string[] }): string {
-  if (r.ok && r.level) return `VERIFIED · level ${r.level}`;
+export function verificationHeadline(r: { ok: boolean; level?: string; band?: TrustBand; policyStatus?: PolicyStatus; notes: string[] }): string {
+  if (r.ok && r.level) {
+    if (r.level === "banded" && r.band) return `VERIFIED · level ${r.level} · band ${r.band}`;
+    return `VERIFIED · level ${r.level}`;
+  }
   const hard = r.notes.some((n) => n.startsWith("source mismatch:") || n.startsWith("publishers differ:"));
   if (r.policyStatus === "custom" && !hard) return "custom policy, not baseline";
   return "NOT VERIFIED";
@@ -159,6 +164,7 @@ function worstStatus(statuses: PolicyStatus[]): PolicyStatus {
 // a caller may print. A non-baseline policy never keeps silver, gold, or banded.
 export function applyVerificationGates(input: {
   level?: VerifyResult["level"];
+  band?: TrustBand;
   policies: { policyName?: string; policyDigest?: string }[];
   sources: string[];
   expectedSource?: string;
@@ -191,7 +197,14 @@ export function applyVerificationGates(input: {
     policyStatus: status,
     notes,
   };
-  if (status === "baseline" && !hard) return { ok: true, level: input.level, ...base };
+  if (status === "baseline" && !hard) {
+    return {
+      ok: true,
+      level: input.level,
+      ...(input.level === "banded" && input.band ? { band: input.band } : {}),
+      ...base,
+    };
+  }
   return { ok: false, ...base };
 }
 
@@ -265,8 +278,10 @@ export async function verifyArtifact(
       notes.push("two forges signed, but their check results differ — not Gold");
     }
   }
+  const band = level === "banded" ? valid.find((b) => b.statement?.predicate.band)?.statement?.predicate.band : undefined;
   const gated = applyVerificationGates({
     level,
+    band,
     policies: valid.map((b) => policyOf(b.statement)),
     sources: valid.map((b) => b.statement?.predicate.source.uri ?? ""),
     expectedSource,

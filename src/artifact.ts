@@ -13,6 +13,7 @@ export type Artifact = {
   type: ArtifactType;
   digest: ArtifactDigest;
   frontmatter?: Record<string, unknown>;
+  skillBody?: string;
 };
 
 export async function loadArtifact(root: string): Promise<Artifact> {
@@ -28,8 +29,10 @@ export async function loadArtifact(root: string): Promise<Artifact> {
 
   let name = basename(root);
   let frontmatter: Record<string, unknown> | undefined;
+  let skillBody: string | undefined;
   if (type === "skill") {
     const text = await readFile(isDirectory ? join(root, "SKILL.md") : root, "utf8");
+    skillBody = stripFrontmatter(text);
     frontmatter = parseFrontmatter(text);
     if (typeof frontmatter?.name === "string" && frontmatter.name) name = frontmatter.name;
   } else if (type === "mcp-server") {
@@ -40,7 +43,12 @@ export async function loadArtifact(root: string): Promise<Artifact> {
       // Unparseable server.json: keep the directory name; policy reports it.
     }
   }
-  return { root, isDirectory, name, type, digest, frontmatter };
+  return { root, isDirectory, name, type, digest, frontmatter, skillBody };
+}
+
+export function stripFrontmatter(text: string): string {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+  return m ? text.slice(m[0].length) : text;
 }
 
 export function parseFrontmatter(text: string): Record<string, unknown> | undefined {

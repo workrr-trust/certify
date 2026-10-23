@@ -95,7 +95,9 @@ async function main(argv: string[]): Promise<number> {
           `policy     ${c.policy.result} (${c.policy.policyName})`,
           `scan       ${c.scan.result} (${c.scan.findings.length} finding(s), ${c.scan.rulesetVersion})`,
           `tests      ${c.tests.result}`,
-          outcome.certified ? `level      ${p.level}` : `NOT CERTIFIED:\n  - ${outcome.failures.join("\n  - ")}`,
+          outcome.certified
+            ? `level      ${p.level}${p.band ? ` (band ${p.band})` : ""}`
+            : `NOT CERTIFIED:\n  - ${outcome.failures.join("\n  - ")}`,
           "",
         ].join("\n"),
       );
@@ -107,7 +109,7 @@ async function main(argv: string[]): Promise<number> {
       if (process.env.GITHUB_OUTPUT) {
         await appendFile(
           process.env.GITHUB_OUTPUT,
-          `certified=${outcome.certified}\nsubject-name=${statement.subject[0].name}\nsubject-digest=sha256:${statement.subject[0].digest.sha256}\nlevel=${p.level}\n`,
+          `certified=${outcome.certified}\nsubject-name=${statement.subject[0].name}\nsubject-digest=sha256:${statement.subject[0].digest.sha256}\nlevel=${p.level}\nband=${p.band ?? ""}\n`,
         );
       }
       return outcome.certified ? 0 : 1;
@@ -126,6 +128,9 @@ async function main(argv: string[]): Promise<number> {
         if (result.source) process.stdout.write(`  publisher ${result.source}\n`);
         if (result.policyName || result.policyDigest) {
           process.stdout.write(`  policy ${result.policyName ?? "(unnamed)"}${result.policyDigest ? ` ${result.policyDigest}` : ""}\n`);
+        }
+        if (result.band) {
+          process.stdout.write(`  band ${result.band}\n`);
         }
         process.stdout.write(`${verificationHeadline(result)}\n`);
         for (const n of result.notes) process.stdout.write(`  note: ${n}\n`);
