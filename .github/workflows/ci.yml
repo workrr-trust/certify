@@ -29,7 +29,24 @@ jobs:
       - name: Test vectors are up to date
         run: |
           node spec/test-vectors/generate.mjs
-          git diff --exit-code -- spec/test-vectors/expected.json
+          node spec/trust-feed/generate.mjs
+          git diff --exit-code -- spec/test-vectors/expected.json spec/trust-feed/vectors.json
+
+  trust-api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/trust-api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
 
   certify-go:
     runs-on: ubuntu-latest
@@ -52,3 +69,49 @@ jobs:
           GOOS: linux
           GOARCH: amd64
         run: go build -o /dev/null ./cmd/workrr
+
+  # Self-test of the root composite action. It does not sign. A missing bundle
+  # and a bundle that is not a workrr certificate must both fail the step.
+  verify-action:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Missing certificate fails closed
+        id: missing
+        continue-on-error: true
+        uses: ./
+        with:
+          path: test/fixtures/good-skill
+          bundle: test/fixtures/no-such-certificate.sigstore.json
+          source: workrr-trust/certify
+          level: silver
+      - name: Non-workrr bundle fails closed
+        id: foreign
+        continue-on-error: true
+        uses: ./
+        with:
+          path: test/fixtures/good-skill
+          bundle: spec/test-vectors/sigstore/npm-sigstore-5.0.0.sigstore.json
+          source: workrr-trust/certify
+          level: silver
+      - name: Gate failed closed
+        env:
+          MISSING_OUTCOME: ${{ steps.missing.outcome }}
+          FOREIGN_OUTCOME: ${{ steps.foreign.outcome }}
+          MISSING_VERIFIED: ${{ steps.missing.outputs.verified }}
+          FOREIGN_VERIFIED: ${{ steps.foreign.outputs.verified }}
+          FOREIGN_HEADLINE: ${{ steps.foreign.outputs.headline }}
+        run: |
+          set -euo pipefail
+          echo "missing outcome=$MISSING_OUTCOME verified=$MISSING_VERIFIED"
+          echo "foreign outcome=$FOREIGN_OUTCOME verified=$FOREIGN_VERIFIED headline=$FOREIGN_HEADLINE"
+          [ "$MISSING_OUTCOME" = "failure" ]
+          [ "$FOREIGN_OUTCOME" = "failure" ]
+          [ "$MISSING_VERIFIED" = "false" ]
+          [ "$FOREIGN_VERIFIED" = "false" ]
+          [ "$FOREIGN_HEADLINE" = "NOT VERIFIED" ]

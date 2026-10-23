@@ -1,0 +1,6 @@
+{
+  "name": "workrr verify",
+  "description": "Fail the pull request unless an artifact has a workrr certificate at the required level and source.",
+  "iconName": "shield",
+  "categories": ["Security"]
+}

@@ -1,0 +1,26 @@
+# Certify a public artifact with workrr.
+#
+# The signer is the reusable workflow at a tag the trust policy pins
+# (v0.1.0 or v0.1.1). Do not retarget this to a commit SHA, to main, or to
+# any other tag: Fulcio records the ref you call, and any other ref fails
+# verification. Do not replace this job with the root action. A composite
+# action runs as your workflow, and that identity is not a trusted signer.
+#
+# Change `path` to the artifact in this repository. The repository must be
+# public; a private repository signs to GitHub's private Sigstore instance
+# and does not get a public Rekor entry.
+name: workrr
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  certify:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.1
+    with:
+      path: skills/my-skill

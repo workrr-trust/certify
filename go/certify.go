@@ -6,6 +6,8 @@ package certify
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"slices"
 	"time"
 )
 
@@ -77,6 +79,44 @@ type CertifyOptions struct {
 	TestsReport *TestsReport
 	// Run the artifact's tests in-process. Only for local use: never in a job that can sign.
 	RunTestsLocally bool
+	// Optional external WXP outcome band override for Banded artifacts.
+	BandOverride string
+}
+
+var (
+	useWhenRe = regexp.MustCompile(`\b` + asciiFold("use when") + `\b`)
+	headingRe = regexp.MustCompile(`(?m)^#{1,6}[` + JSWhitespaceClass + `]+[^` + JSWhitespaceClass + `]`)
+	stepOneRe = regexp.MustCompile(`(?m)^1\.[` + JSWhitespaceClass + `]+[^` + JSWhitespaceClass + `]`)
+	readmeRe  = regexp.MustCompile(`^(` + asciiFold("README") + `)(\.` + asciiFold("md") + `)?$`)
+)
+
+// ComputeTrustBand computes the deterministic A–E grade for a Banded artifact.
+func ComputeTrustBand(a *Artifact, p *Policy, scan ScanResult, override string) string {
+	if override != "" {
+		return override
+	}
+	if p == nil {
+		p = BaselinePolicy()
+	}
+	score := 0
+	if !slices.ContainsFunc(scan.Findings, func(f Finding) bool { return f.Severity == "warn" }) {
+		score++
+	}
+	if len(listTools(a.Frontmatter["allowed-tools"])) > 0 || p.AllowedTools != nil {
+		score++
+	}
+	desc, _ := a.Frontmatter["description"].(string)
+	structuredSkill := a.Type == TypeSkill && useWhenRe.MatchString(desc) && (headingRe.MatchString(a.SkillBody) || stepOneRe.MatchString(a.SkillBody))
+	hasReadme := slices.ContainsFunc(a.Digest.Files, func(f ArtifactFile) bool { return readmeRe.MatchString(f.Path) })
+	if structuredSkill || (a.Type != TypeSkill && hasReadme) {
+		score++
+	}
+	fmLicense, _ := a.Frontmatter["license"].(string)
+	hasLicFile := slices.ContainsFunc(a.Digest.Files, func(f ArtifactFile) bool { return licenseRe.MatchString(f.Path) })
+	if hasLicFile || JSTrim(fmLicense) != "" {
+		score++
+	}
+	return [...]string{"E", "D", "C", "B", "A"}[score]
 }
 
 func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
@@ -89,7 +129,11 @@ func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
 		return nil, err
 	}
 	policy := CheckPolicy(a, opts.Policy)
-	scan := ScanArtifact(a)
+	var scanEx []ScanException
+	if opts.Policy != nil {
+		scanEx = opts.Policy.ScanExceptions
+	}
+	scan := ScanArtifact(a, scanEx)
 
 	tests := TestsResult{Result: "none"}
 	failures := []string{}
@@ -119,7 +163,7 @@ func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
 	}
 	if scan.Result == "fail" {
 		for _, f := range scan.Findings {
-			if f.Severity != "warn" {
+			if f.Severity != "warn" && !f.Excepted {
 				failures = append(failures, fmt.Sprintf("scan: %s (%s) %s:%d", f.Rule, f.Severity, f.File, f.Line))
 			}
 		}
@@ -144,6 +188,8 @@ func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
 	p.Level = "banded"
 	if provenance.Result == "pass" && policy.Result == "pass" && scan.Result == "pass" && tests.Result == "pass" {
 		p.Level = "silver"
+	} else if len(failures) == 0 {
+		p.Band = ComputeTrustBand(a, opts.Policy, scan, opts.BandOverride)
 	}
 	p.Certifier.Name = "workrr-certify"
 	p.Certifier.Version = Version
