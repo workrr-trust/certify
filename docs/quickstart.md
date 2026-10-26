@@ -21,7 +21,9 @@ name: workrr
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]   # your default branch: a certificate soon after each merge
+    tags: ["v*"]       # and one for each release tag, if you tag releases
+  workflow_dispatch:
 
 jobs:
   certify:
@@ -33,6 +35,10 @@ jobs:
     with:
       path: skills/my-skill
 ```
+
+Many artifact repos never tag releases, so the workflow also certifies each push to
+the default branch (change `main` if yours is `master`). Each run issues a new
+certificate for the artifact as it is at that commit.
 
 `v0.1.0` is the other trusted tag. Those two are the only refs that verify.
 Do not point this `uses` line at a commit SHA, at `main`, or at a tag you cut

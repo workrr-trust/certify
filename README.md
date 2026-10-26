@@ -35,7 +35,7 @@ In the artifact's **public** repo:
 
 ```yaml
 # .github/workflows/workrr.yml
-on: { push: { tags: ["v*"] } }
+on: { push: { branches: [main], tags: ["v*"] }, workflow_dispatch: {} }
 jobs:
   certify:
     permissions: { contents: read, id-token: write, attestations: write }
