@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3 (2026-10-26)
+
+- `certify.yml`: each call names its tests report `workrr-tests-report-<hash of path>`
+  and downloads it by that name. The 0.1.2 fix (download by artifact ID) did not
+  work: download-artifact only sees the newest artifact of each name, even when
+  asked by ID, so with two or more certify calls in one run all but one still
+  failed. Tested with three calls in one run.
+- Trust policy: pin v0.1.2 to its tag object
+  `7ed4c1ded5e6e611cfea5234b42d9601e827ff07`, and accept this release
+  (`certify.yml@refs/tags/v0.1.3`) by exact tag until v0.1.4 pins it.
+
 ## 0.1.2 (2026-10-26)
 
 - Trust policy: accept certificates from this release (`certify.yml@refs/tags/v0.1.2`)

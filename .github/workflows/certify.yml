@@ -54,7 +54,15 @@ jobs:
     outputs:
       certifier-repo: ${{ steps.claims.outputs.repo }}
       certifier-sha: ${{ steps.claims.outputs.sha }}
+      # Per-call name suffix for the tests report. Several certify.yml calls in one run
+      # share the run's artifact namespace, and download-artifact only sees the newest
+      # artifact of each name (even when asked by ID), so each call needs its own name.
+      report-slug: ${{ steps.slug.outputs.slug }}
     steps:
+      - id: slug
+        env:
+          ARTIFACT_PATH: ${{ inputs.path }}
+        run: echo "slug=$(printf '%s' "$ARTIFACT_PATH" | sha256sum | cut -c1-16)" >>"$GITHUB_OUTPUT"
       - id: claims
         shell: bash
         run: |
@@ -77,10 +85,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      # Several certify.yml calls in one run each upload a report under the same name,
-      # so certify downloads its own by ID, never by name.
-      tests-report-id: ${{ steps.report.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,10 +111,9 @@ jobs:
           export VIRTUAL_ENV="$RUNNER_TEMP/workrr-py"
           # A failing suite still produces a report; certify decides.
           node .workrr-certifier/dist/cli.js test "subject/$ARTIFACT_PATH" --out tests.json || true
-      - id: report
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: workrr-tests-report
+          name: workrr-tests-report-${{ needs.resolve.outputs.report-slug }}
           path: tests.json
 
   certify:
@@ -143,9 +146,8 @@ jobs:
         run: npm ci --ignore-scripts && npm run build
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          artifact-ids: ${{ needs.test.outputs.tests-report-id }}
+          name: workrr-tests-report-${{ needs.resolve.outputs.report-slug }}
           path: tests-report
-          merge-multiple: true
       - name: Certify
         id: run
         env:

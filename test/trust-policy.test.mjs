@@ -13,17 +13,23 @@ test("older releases need their pinned tag digest", () => {
   assert.equal(match("refs/tags/v0.1.1", "5a1d5c47fc1175db9979e13a2301dae57458a135"), undefined);
 });
 
+test("v0.1.2 needs its pinned tag digest", () => {
+  assert.ok(match("refs/tags/v0.1.2", "7ed4c1ded5e6e611cfea5234b42d9601e827ff07"));
+  assert.equal(match("refs/tags/v0.1.2", "2bbb72964e862c326af210c0117e47c740b463b0"), undefined);
+  assert.equal(match("refs/tags/v0.1.2", "1234567890123456789012345678901234567890"), undefined);
+});
+
 test("the newest release is accepted by its exact tag", () => {
-  assert.ok(match("refs/tags/v0.1.2", "1234567890123456789012345678901234567890"));
+  assert.ok(match("refs/tags/v0.1.3", "1234567890123456789012345678901234567890"));
 });
 
 test("unlisted, look-alike and branch refs are rejected", () => {
-  for (const ref of ["refs/tags/v0.1.3", "refs/tags/v0.1.2x", "refs/tags/v0.1.2-rc1", "refs/heads/v0.1.2", "refs/heads/main"]) {
+  for (const ref of ["refs/tags/v0.1.4", "refs/tags/v0.1.3x", "refs/tags/v0.1.3-rc1", "refs/heads/v0.1.3", "refs/heads/main"]) {
     assert.equal(match(ref, "78d8c1a98c929b7b1c1b532c25256582a84887b1"), undefined, ref);
   }
 });
 
 test("the GitLab identity is not trusted at the newest release", () => {
-  const gl = { san: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.2", issuer: "https://gitlab.com", buildSignerDigest: "1234567890123456789012345678901234567890" };
+  const gl = { san: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.3", issuer: "https://gitlab.com", buildSignerDigest: "1234567890123456789012345678901234567890" };
   assert.equal(matchDescribedSigner(DEFAULT_TRUST_POLICY, gl), undefined);
 });
