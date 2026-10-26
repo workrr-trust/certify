@@ -77,6 +77,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      # Several certify.yml calls in one run each upload a report under the same name,
+      # so certify downloads its own by ID, never by name.
+      tests-report-id: ${{ steps.report.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -103,7 +107,8 @@ jobs:
           export VIRTUAL_ENV="$RUNNER_TEMP/workrr-py"
           # A failing suite still produces a report; certify decides.
           node .workrr-certifier/dist/cli.js test "subject/$ARTIFACT_PATH" --out tests.json || true
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: workrr-tests-report
           path: tests.json
@@ -138,14 +143,16 @@ jobs:
         run: npm ci --ignore-scripts && npm run build
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: workrr-tests-report
+          artifact-ids: ${{ needs.test.outputs.tests-report-id }}
+          path: tests-report
+          merge-multiple: true
       - name: Certify
         id: run
         env:
           ARTIFACT_PATH: ${{ inputs.path }}
           POLICY_PATH: ${{ inputs.policy }}
         run: |
-          args=("subject/$ARTIFACT_PATH" --tests-report tests.json --predicate-out predicate.json --statement-out statement.json)
+          args=("subject/$ARTIFACT_PATH" --tests-report tests-report/tests.json --predicate-out predicate.json --statement-out statement.json)
           if [ -n "$POLICY_PATH" ]; then args+=(--policy "subject/$POLICY_PATH"); fi
           node .workrr-certifier/dist/cli.js certify "${args[@]}"
       - name: Sign and log to Rekor
