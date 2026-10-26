@@ -13,7 +13,9 @@ name: workrr
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]   # your default branch: a certificate soon after each merge
+    tags: ["v*"]       # and one for each release tag, if you tag releases
+  workflow_dispatch:
 
 jobs:
   certify:
