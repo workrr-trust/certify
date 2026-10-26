@@ -39,7 +39,7 @@ on: { push: { branches: [main], tags: ["v*"] }, workflow_dispatch: {} }
 jobs:
   certify:
     permissions: { contents: read, id-token: write, attestations: write }
-    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.1
+    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.3
     with:
       path: skills/my-skill
 ```
@@ -72,16 +72,19 @@ A certificate is trusted only when its Fulcio identity is
 
 `https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.0`
 
-or the same path at `v0.1.1`, and the Build Signer Digest is the annotated tag
-object pinned in the trust policy (`9fbe3e453cbd80bef0301f08db79408bb12c7d64`
-and `78d8c1a98c929b7b1c1b532c25256582a84887b1`).
+or the same path at `v0.1.1`, `v0.1.2` or `v0.1.3`. Each released tag except the
+newest is pinned to its annotated tag object, the Build Signer Digest Fulcio records
+(`9fbe3e45…`, `78d8c1a9…`, `7ed4c1de…`; full values in
+[`src/trust-policy.ts`](src/trust-policy.ts)). The newest release (`v0.1.3`) is
+accepted by exact tag, because a release can't contain its own tag object; the next
+release pins it. Release tags are protected, and the public ledger alerts if one moves.
 
 Fulcio sets that identity from `job_workflow_ref` of the **called reusable
 workflow**, not from the caller. A composite `action.yml` does not get its own
 job. Its steps run inside the caller's job, so a signature minted there would
 name the caller's workflow. The trust policy rejects that certificate.
 Certification stays on [`.github/workflows/certify.yml`](.github/workflows/certify.yml)
-at `v0.1.0` or `v0.1.1`.
+at a released tag (`v0.1.3` today).
 
 The action also has no input that replaces the trust policy. The signer set is
 the built-in policy in the commit you pin. `level: gold` fails closed today:
@@ -108,9 +111,9 @@ jobs:
           level: silver
 ```
 
-Replace `<40-character SHA>` with the full commit you reviewed. Do not use
-`v0.1.0` or `v0.1.1` for this action: those tags are certifier identities, and
-they do not contain `action.yml`. Do not use a moving tag. Grant `contents:
+Replace `<40-character SHA>` with the full commit you reviewed (from `v0.1.2`
+on, a release tag's commit contains `action.yml`). `v0.1.0` and `v0.1.1` do not
+contain it. Do not use a moving tag. Grant `contents:
 read` only. `id-token` and `attestations` belong on the certify job, not here.
 
 In this repository the same step is `uses: ./` ([`examples/verify.yml`](examples/verify.yml)).
@@ -123,7 +126,7 @@ step clears the OIDC request variables before it builds.
 ### Publishing the listing
 
 This repository does not publish itself. An owner does the following after
-review. Do not move `v0.1.0` or `v0.1.1`.
+review. Never move a release tag.
 
 1. Merge the change that adds `action.yml`. Confirm the repository is public
    and that `action.yml` is the only action metadata file at the repository
@@ -143,15 +146,15 @@ review. Do not move `v0.1.0` or `v0.1.1`.
    requires it to publish a release.
 5. Cut a **new** immutable tag. `release.yml` runs on `v*` and requires
    `package.json`, `src/version.ts`, and `go/certify.go` to equal the tag.
-   They are `0.1.1` today, so bump those three and merge that first. Then,
+   Bump those three to X.Y.Z and merge that first. Then,
    because tags are protected and the workflow cannot create them:
    `git tag -a vX.Y.Z -m vX.Y.Z`, `git tag -a go/vX.Y.Z -m go/vX.Y.Z` on the
    same commit, and `git push origin vX.Y.Z go/vX.Y.Z`.
-6. That new tag is **not** a trusted certifier. The built-in policy lists only
-   `certify.yml@refs/tags/v0.1.0` and `v0.1.1`. Publishers keep calling those.
-   A certificate from `certify.yml@refs/tags/vX.Y.Z` will not verify until a
-   later release pins that tag's object digest (`git rev-parse vX.Y.Z`, not
-   `vX.Y.Z^{commit}`). This release cannot pin a tag that does not exist yet.
+6. Before tagging, the release commit's trust policy must pin the previous
+   release's tag object (`git rev-parse vPREV`, not `vPREV^{commit}`) and accept
+   `certify.yml@refs/tags/vX.Y.Z` by exact tag. A release can't pin its own tag
+   object; the next release does. Then regenerate the test vectors
+   (`node spec/test-vectors/generate.mjs && node spec/trust-feed/generate.mjs`).
 7. Let `release.yml` create the GitHub release and publish npm. It does not
    tick the Marketplace checkbox. If you create the release from the
    `action.yml` banner first, `gh release create` inside `release.yml` can
@@ -164,11 +167,10 @@ review. Do not move `v0.1.0` or `v0.1.1`.
    is never moved. Consumers pin `workrr verify` by full commit SHA. After the
    release exists, `git rev-parse vX.Y.Z^{commit}` is that SHA. A Marketplace
    "use latest" snippet that inserts `@vX.Y.Z` is a tag; replace it with the
-   commit SHA. An immutable tag is still not a `certify.yml` ref unless it is
-   `v0.1.0` or `v0.1.1`.
+   commit SHA.
 10. Smoke the listing from a different public repository: one step, SHA pin,
     `contents: read`, no OIDC permission. A missing bundle fails the job. A
-    certificate from `certify.yml@v0.1.1` passes at `level: silver` when
+    certificate from `certify.yml@v0.1.3` passes at `level: silver` when
     `source` is the publisher.
 
 ## Verify
@@ -203,7 +205,7 @@ build and does not check revocation. It prints
 `offline: using the embedded trust policy; revocation was not checked`. A revoked
 certificate can still verify in that mode. The policy and revocation formats are
 [spec §7](spec/README.md). Until the trust API is deployed, fetch failure falls
-back to the embedded policy (the v0.1.0 and v0.1.1 tag pins) and says so.
+back to the embedded policy (the released tags, as above) and says so.
 
 ## Local use
 
@@ -228,14 +230,13 @@ npm test
 - The signed trust policy and revocation feed are implemented ([spec §7](spec/README.md),
   [trust API](docs/trust-api.md)). No policy has been signed or deployed yet, so
   `verify` falls back to the embedded policy and does not see revocations until
-  that deploy. That fallback is the v0.1.2 trust set: only
-  `certify.yml@refs/tags/v0.1.0` and `@refs/tags/v0.1.1`, each pinned to the Build
-  Signer Digest Fulcio recorded for that annotated tag (the tag object, not the peeled
-  commit). `refs/heads/main` is not accepted. `EMBEDDED_POLICY_SEQUENCE` is still 0.
-  The policy-signer and revoke-signer Build Signer Digests are still empty. A release
-  is not trusted until its tag object is added.
+  that deploy. That fallback is the v0.1.3 trust set: `certify.yml` at
+  `refs/tags/v0.1.0` to `v0.1.2`, each pinned to the Build Signer Digest Fulcio
+  recorded for that annotated tag (the tag object, not the peeled commit), and
+  `v0.1.3` by exact tag. `refs/heads/main` is not accepted. `EMBEDDED_POLICY_SEQUENCE` is still 0.
+  The policy-signer and revoke-signer Build Signer Digests are still empty.
 - The Marketplace action only verifies. It does not add a signer. A certificate
-  still has to come from `certify.yml@v0.1.0` or `@v0.1.1`.
+  still has to come from `certify.yml` at a released tag.
 - A policy digest other than `workrr-baseline-v0.1` does not verify at a baseline
   level. Reusing that name on a different document is rejected.
 - `--offline` skips revocation on purpose. See the warning it prints.
