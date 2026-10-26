@@ -2,6 +2,12 @@
 
 ## 0.1.2 (unreleased)
 
+- Trust policy: accept certificates from this release (`certify.yml@refs/tags/v0.1.2`,
+  GitHub and GitLab) by exact tag. A release can't pin its own tag digest, so v0.1.3
+  pins it. Without this, the v0.1.2 verifier would reject v0.1.2 certificates.
+- `certify.yml`: download the tests report by artifact ID. With two or more certify
+  calls in one workflow run, a certify job could get another call's report and fail.
+
 ### Security
 
 - The built-in trust policy accepts only

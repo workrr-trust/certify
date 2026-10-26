@@ -389,6 +389,18 @@ func TestMatchSigner(t *testing.T) {
 			t.Errorf("accepted %+v", bad)
 		}
 	}
+	// The newest release is accepted by its exact tag with any digest; later or
+	// look-alike tags are not.
+	v012 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.2", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	if MatchSigner(&DefaultTrustPolicy, v012) == nil {
+		t.Error("rejected the newest release tag v0.1.2")
+	}
+	for _, ref := range []string{"refs/tags/v0.1.3", "refs/tags/v0.1.2x", "refs/tags/v0.1.2-rc1", "refs/heads/v0.1.2"} {
+		s := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@" + ref, Issuer: gh.Issuer, BuildSignerDigest: tagV010}
+		if MatchSigner(&DefaultTrustPolicy, s) != nil {
+			t.Errorf("accepted %s", ref)
+		}
+	}
 	pinned := DefaultTrustPolicy
 	pinned.Signers = slices.Clone(pinned.Signers)
 	pinned.Signers[0].BuildSignerDigests = []string{"def"}
