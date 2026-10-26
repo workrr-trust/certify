@@ -68,12 +68,5 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
       subjectAlternativeName: `^${GITLAB_CERTIFY_SAN}v0\\.1\\.1$`,
       buildSignerDigests: ["78d8c1a98c929b7b1c1b532c25256582a84887b1"],
     },
-    {
-      // NEWEST: this release, by exact tag; v0.1.3 pins its digest.
-      forge: "gitlab",
-      issuer: "https://gitlab.com",
-      subjectAlternativeName: `^${GITLAB_CERTIFY_SAN}v0\\.1\\.2$`,
-      buildSignerDigests: [],
-    },
   ],
 };

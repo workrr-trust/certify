@@ -79,12 +79,5 @@ var DefaultTrustPolicy = TrustPolicy{
 			SubjectAlternativeName: `^` + gitlabCertifySAN + `v0\.1\.1$`,
 			BuildSignerDigests:     []string{"78d8c1a98c929b7b1c1b532c25256582a84887b1"},
 		},
-		{
-			// Newest: this release, by exact tag; v0.1.3 pins its digest.
-			Forge:                  ForgeGitLab,
-			Issuer:                 "https://gitlab.com",
-			SubjectAlternativeName: `^` + gitlabCertifySAN + `v0\.1\.2$`,
-			BuildSignerDigests:     []string{},
-		},
 	},
 }

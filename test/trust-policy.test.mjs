@@ -22,3 +22,8 @@ test("unlisted, look-alike and branch refs are rejected", () => {
     assert.equal(match(ref, "78d8c1a98c929b7b1c1b532c25256582a84887b1"), undefined, ref);
   }
 });
+
+test("the GitLab identity is not trusted at the newest release", () => {
+  const gl = { san: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.2", issuer: "https://gitlab.com", buildSignerDigest: "1234567890123456789012345678901234567890" };
+  assert.equal(matchDescribedSigner(DEFAULT_TRUST_POLICY, gl), undefined);
+});
