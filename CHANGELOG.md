@@ -1,15 +1,33 @@
 # Changelog
 
-## 0.1.2 (unreleased)
+## 0.1.3 (2026-10-26)
+
+- `certify.yml`: each call names its tests report `workrr-tests-report-<hash of path>`
+  and downloads it by that name. The 0.1.2 fix (download by artifact ID) did not
+  work: download-artifact only sees the newest artifact of each name, even when
+  asked by ID, so with two or more certify calls in one run all but one still
+  failed. Tested with three calls in one run.
+- Trust policy: pin v0.1.2 to its tag object
+  `7ed4c1ded5e6e611cfea5234b42d9601e827ff07`, and accept this release
+  (`certify.yml@refs/tags/v0.1.3`) by exact tag until v0.1.4 pins it.
+
+## 0.1.2 (2026-10-26)
+
+- Trust policy: accept certificates from this release (`certify.yml@refs/tags/v0.1.2`)
+  by exact tag. A release can't pin its own tag digest, so v0.1.3 pins it. Release
+  tags are protected, and the ledger's identity-watch alerts if one moves.
+- `certify.yml`: download the tests report by artifact ID. With two or more certify
+  calls in one workflow run, a certify job could get another call's report and fail.
 
 ### Security
 
-- The built-in trust policy accepts only
-  `certify.yml@refs/tags/v0.1.0` and `certify.yml@refs/tags/v0.1.1`. Each tag is
-  pinned to the Build Signer Digest Fulcio recorded for that annotated tag
+- The built-in trust policy accepts only `certify.yml` at `refs/tags/v0.1.0`,
+  `v0.1.1` and `v0.1.2`. The first two are pinned to the Build Signer Digest Fulcio
+  recorded for that annotated tag
   (`9fbe3e453cbd80bef0301f08db79408bb12c7d64` and
   `78d8c1a98c929b7b1c1b532c25256582a84887b1`). Those are the tag objects, not the
-  peeled commits. `refs/heads/main` is not accepted.
+  peeled commits. v0.1.2 is accepted by exact tag until v0.1.3 pins it.
+  `refs/heads/main` is not accepted.
 - The unpublished GitLab certifier (`workrr-trust/certify-gitlab`) is not in the
   trust set. The default policy does not award Gold.
 - `verify` reports the policy name and digest from the certificate. A digest that
@@ -24,7 +42,7 @@
   SHA. The one-time npm bootstrap token is removed; publish uses trusted
   publishing only.
 - The root Marketplace action does not sign and is not a trusted signer. The
-  trust set is unchanged: still only `certify.yml` at v0.1.0 and v0.1.1.
+  trust set is `certify.yml` at v0.1.0, v0.1.1 and v0.1.2.
 
 ### Added
 
@@ -36,10 +54,7 @@
 
 ### Breaking
 
-- Certificates signed from `refs/heads/main`, from any tag other than v0.1.0 and
-  v0.1.1, or by the GitLab identity no longer verify.
+- Certificates signed from `refs/heads/main`, from any tag other than v0.1.0,
+  v0.1.1 and v0.1.2, or by the GitLab identity no longer verify.
 - Certificates whose policy digest is not the baseline no longer verify as
   silver, gold, or banded.
-- v0.1.2's own tag cannot be pinned in this commit: an annotated tag's Build
-  Signer Digest does not exist until the tag is created. Certificates from that
-  tag will not verify until a later release records the tag object.
