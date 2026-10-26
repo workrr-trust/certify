@@ -7,7 +7,7 @@
 #
 #   uses: workrr-trust/certify@<40-character SHA>
 #
-# v0.1.0 and v0.1.1 are certifier tags. They do not contain this action.
+# v0.1.0 and v0.1.1 do not contain this action; v0.1.2 and later do. Pin a commit SHA.
 # Do not use a moving tag. This job does not sign. Grant contents: read
 # only; do not grant id-token or attestations.
 name: workrr
