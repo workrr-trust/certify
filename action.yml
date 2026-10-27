@@ -2,7 +2,7 @@
 #
 # This file is verify-only. It must not sign or request an OIDC token.
 # Certificates are trusted by the Fulcio identity of
-# .github/workflows/certify.yml at released tags v0.1.0 to v0.1.3 (Build Signer
+# .github/workflows/certify.yml at released tags v0.1.0 to v0.1.4 (Build Signer
 # Digest pinned in the trust policy). A composite action runs inside the
 # caller's job, so a certificate minted here would name the caller and would
 # not verify.
