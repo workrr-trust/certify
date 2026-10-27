@@ -280,9 +280,9 @@ test("every action is pinned by an allowlisted SHA", async () => {
     }
   }
   assert.ok(refs.includes("actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1"));
-  assert.ok(refs.includes("workrr-trust/certify/.github/workflows/certify.yml@v0.1.3"));
+  assert.ok(refs.includes("workrr-trust/certify/.github/workflows/certify.yml@v0.1.4"));
   assert.ok(refs.includes("./"));
-  assert.equal(refs.some((ref) => /@v0\.1\.[4-9]/.test(ref) || /@main\b/.test(ref) || /@v1\b/.test(ref)), false);
+  assert.equal(refs.some((ref) => /@v0\.1\.[5-9]/.test(ref) || /@main\b/.test(ref) || /@v1\b/.test(ref)), false);
 
   const ci = parseYaml(await readFile(join(root, ".github/workflows/ci.yml"), "utf8"));
   assert.deepEqual(ci.jobs["verify-action"].permissions, { contents: "read" });
@@ -296,5 +296,5 @@ test("every action is pinned by an allowlisted SHA", async () => {
     "./",
   ]);
   const certifyExample = parseYaml(await readFile(join(root, "examples/certify.yml"), "utf8"));
-  assert.deepEqual(collectUses(certifyExample), ["workrr-trust/certify/.github/workflows/certify.yml@v0.1.3"]);
+  assert.deepEqual(collectUses(certifyExample), ["workrr-trust/certify/.github/workflows/certify.yml@v0.1.4"]);
 });
