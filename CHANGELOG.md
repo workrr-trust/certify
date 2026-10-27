@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.4 (2026-10-27)
+
+- **Public scans** ([docs/public-scans.md](docs/public-scans.md)): a new level,
+  `scanned`, for certificates that need nothing installed by the maintainer.
+  `.github/workflows/scan.yml` runs in this repo at a release tag, reads a public
+  commit (it never runs the project's code), and signs with Sigstore. The trust
+  policy lists it as an `observer` signer. Verifiers accept an observer only from
+  `workrr-trust/certify`, only at level `scanned` with tests `none`, and never count
+  it toward Gold. When a maintainer certificate also verifies, the maintainer's
+  level is reported. `scanned` ranks below `banded` in `gate` and the verify action.
+  Verifiers v0.1.3 and earlier reject scanned certificates, so older clients fail
+  closed.
+- `workrr certify --observe <repo-url>` (TypeScript and Go).
+- Trust policy: pin v0.1.3 to its tag object
+  `7cf13e7228c6f2bdf01b6d3ab670edef6f77fe4b`, and accept this release
+  (`certify.yml` and `scan.yml` at `refs/tags/v0.1.4`) by exact tag until v0.1.5
+  pins it.
+
 ## 0.1.3 (2026-10-26)
 
 - `certify.yml`: each call names its tests report `workrr-tests-report-<hash of path>`

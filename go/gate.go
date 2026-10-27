@@ -12,9 +12,10 @@ import (
 )
 
 var gateLevelRank = map[string]int{
-	"banded": 1,
-	"silver": 2,
-	"gold":   3,
+	"scanned": 0,
+	"banded":  1,
+	"silver":  2,
+	"gold":    3,
 }
 
 var gateSkipDirs = map[string]bool{
@@ -255,19 +256,28 @@ func RunOrgPolicyGate(rootDir string, opts OrgGateOptions) (*OrgGateResult, erro
 					reasons = append(reasons, fmt.Sprintf("publisher %s is not in allowed sources (%s)", uri, strings.Join(opts.AllowedSources, ", ")))
 				}
 			}
+			// A public scan counts only when no publisher certificate verified.
 			forges := map[Forge]bool{}
-			hasSilver := false
+			hasSilver, hasPublisher := false, false
 			for _, b := range valid {
+				if b.Observer || predicateField(b.Statement, "level") == "scanned" {
+					continue
+				}
+				hasPublisher = true
 				if predicateField(b.Statement, "level") == "silver" {
 					hasSilver = true
 					forges[b.Forge] = true
 				}
 			}
-			level = "banded"
-			if len(forges) >= 2 {
+			switch {
+			case !hasPublisher:
+				level = "scanned"
+			case len(forges) >= 2:
 				level = "gold"
-			} else if hasSilver {
+			case hasSilver:
 				level = "silver"
+			default:
+				level = "banded"
 			}
 		}
 

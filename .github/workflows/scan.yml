@@ -1,0 +1,123 @@
+# workrr public scan: certify a public commit without the maintainer installing
+# anything (docs/public-scans.md). Level "scanned".
+#
+# This workflow's identity is an OBSERVER certifier: Fulcio records
+#   https://github.com/workrr-trust/certify/.github/workflows/scan.yml@<ref>
+# and this repo as the source. Verifiers accept it only at a release tag pinned
+# in the trust policy, so dispatch it at a tag:
+#
+#   gh workflow run scan.yml -R workrr-trust/certify --ref vX.Y.Z \
+#     -f repository=owner/repo -f commit=<40-hex> -f path=skills/name
+#
+# Security model: the scanned project's code is never executed. It is checked out
+# (public repos only, without credentials), hashed and pattern-scanned by this
+# repo's certifier at the same commit as this workflow.
+name: workrr-scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Public GitHub repository (owner/repo)
+        required: true
+      commit:
+        description: Full 40-hex commit SHA to scan
+        required: true
+      path:
+        description: Artifact path in that repository (directory or file)
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: scan-${{ inputs.repository }}-${{ inputs.commit }}-${{ inputs.path }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      certified: ${{ steps.run.outputs.certified }}
+      level: ${{ steps.run.outputs.level }}
+      subject-digest: ${{ steps.run.outputs.subject-digest }}
+    steps:
+      - name: Check inputs
+        env:
+          REPOSITORY: ${{ inputs.repository }}
+          COMMIT: ${{ inputs.commit }}
+          ARTIFACT_PATH: ${{ inputs.path }}
+          REF: ${{ github.ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ $REF == refs/tags/v* ]] || echo "::warning::not a release tag ($REF): verifiers will not accept this certificate"
+          [[ $REPOSITORY =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$ ]] || { echo "::error::repository must be owner/repo"; exit 1; }
+          [[ $COMMIT =~ ^[0-9a-f]{40}$ ]] || { echo "::error::commit must be a full 40-hex SHA"; exit 1; }
+          [[ $ARTIFACT_PATH =~ ^[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*$ && ! /$ARTIFACT_PATH/ =~ /\.\.?/ ]] || { echo "::error::unsafe path"; exit 1; }
+          # Public repositories only. This repo's token can't see anyone's private repo,
+          # so a private one fails here too.
+          private=$(gh api "repos/$REPOSITORY" --jq .private)
+          [ "$private" = "false" ] || { echo "::error::$REPOSITORY is not a public repository"; exit 1; }
+      - name: Check out the scanned commit (no credentials)
+        env:
+          REPOSITORY: ${{ inputs.repository }}
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          git init --quiet subject
+          git -C subject -c credential.helper= fetch --quiet --depth 1 "https://github.com/$REPOSITORY" "$COMMIT"
+          git -C subject -c advice.detachedHead=false checkout --quiet FETCH_HEAD
+          [ "$(git -C subject rev-parse HEAD)" = "$COMMIT" ]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .workrr-certifier
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Build certifier
+        working-directory: .workrr-certifier
+        run: npm ci --ignore-scripts && npm run build
+      - name: Certify (observe)
+        id: run
+        env:
+          REPOSITORY: ${{ inputs.repository }}
+          ARTIFACT_PATH: ${{ inputs.path }}
+        run: |
+          [ -e "subject/$ARTIFACT_PATH" ] || { echo "::error::$ARTIFACT_PATH not found at this commit"; exit 1; }
+          node .workrr-certifier/dist/cli.js certify "subject/$ARTIFACT_PATH" \
+            --observe "https://github.com/$REPOSITORY" \
+            --predicate-out predicate.json --statement-out statement.json
+      - name: Sign and log to Rekor
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.run.outputs.subject-name }}
+          subject-digest: ${{ steps.run.outputs.subject-digest }}
+          predicate-type: https://trust.workrr.ai/certificate/v0.1
+          predicate-path: predicate.json
+      - name: Collect certificate
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          REPOSITORY: ${{ inputs.repository }}
+          COMMIT: ${{ inputs.commit }}
+          ARTIFACT_PATH: ${{ inputs.path }}
+        run: |
+          mkdir -p certificate
+          cp "$BUNDLE" certificate/certificate.sigstore.json
+          cp statement.json certificate/statement.json
+          {
+            echo "### workrr public scan"
+            echo "- scanned: \`$REPOSITORY@${COMMIT:0:12}\` \`$ARTIFACT_PATH\`"
+            echo "- subject: \`${{ steps.run.outputs.subject-name }}\` \`${{ steps.run.outputs.subject-digest }}\`"
+            echo "- level: **scanned** (band ${{ steps.run.outputs.band }}); not signed by the maintainer"
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workrr-certificate
+          path: certificate/

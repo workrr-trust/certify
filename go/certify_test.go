@@ -391,9 +391,25 @@ func TestMatchSigner(t *testing.T) {
 	}
 	// The newest release is accepted by its exact tag with any digest; later or
 	// look-alike tags are not.
-	v013 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.3", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	v014 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.4", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	if s := MatchSigner(&DefaultTrustPolicy, v014); s == nil || s.Role != "" {
+		t.Errorf("newest release tag v0.1.4: got %+v", s)
+	}
+	v013 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.3", Issuer: gh.Issuer, BuildSignerDigest: "7cf13e7228c6f2bdf01b6d3ab670edef6f77fe4b"}
 	if MatchSigner(&DefaultTrustPolicy, v013) == nil {
-		t.Error("rejected the newest release tag v0.1.3")
+		t.Error("rejected v0.1.3 at its pinned tag digest")
+	}
+	v013.BuildSignerDigest = "46c524bf97e8f580375edff746c847b86f4b23f9"
+	if MatchSigner(&DefaultTrustPolicy, v013) != nil {
+		t.Error("accepted v0.1.3 at the peeled commit")
+	}
+	scan := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.4", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	if s := MatchSigner(&DefaultTrustPolicy, scan); s == nil || s.Role != RoleObserver {
+		t.Errorf("scan.yml@v0.1.4 should be an observer, got %+v", s)
+	}
+	scan.SAN = "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/heads/main"
+	if MatchSigner(&DefaultTrustPolicy, scan) != nil {
+		t.Error("accepted scan.yml from a branch")
 	}
 	v012 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.2", Issuer: gh.Issuer, BuildSignerDigest: "7ed4c1ded5e6e611cfea5234b42d9601e827ff07"}
 	if MatchSigner(&DefaultTrustPolicy, v012) == nil {
@@ -403,7 +419,7 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v012) != nil {
 		t.Error("accepted v0.1.2 at the peeled commit")
 	}
-	for _, ref := range []string{"refs/tags/v0.1.4", "refs/tags/v0.1.3x", "refs/tags/v0.1.3-rc1", "refs/heads/v0.1.3"} {
+	for _, ref := range []string{"refs/tags/v0.1.5", "refs/tags/v0.1.4x", "refs/tags/v0.1.4-rc1", "refs/heads/v0.1.4"} {
 		s := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@" + ref, Issuer: gh.Issuer, BuildSignerDigest: tagV010}
 		if MatchSigner(&DefaultTrustPolicy, s) != nil {
 			t.Errorf("accepted %s", ref)
@@ -687,5 +703,59 @@ func TestGoldRequiresTwoForgesSameCommitAndChecks(t *testing.T) {
 	lvl3, notes3 := EvaluateGoldBundles([]BundleResult{gh, glDiffChecks}, nil)
 	if lvl3 != "silver" || !slices.Contains(notes3, "two forges signed, but their check results differ — not Gold") {
 		t.Fatalf("expected silver on check mismatch, got %s (%v)", lvl3, notes3)
+	}
+}
+
+func scannedStatement(level, tests string) map[string]any {
+	return map[string]any{"predicate": map[string]any{
+		"source": map[string]any{"uri": "https://github.com/someone/skills", "commit": strings.Repeat("a", 40), "path": "skills/s"},
+		"checks": map[string]any{
+			"provenance": map[string]any{"result": "pass"},
+			"policy":     map[string]any{"result": "pass"},
+			"scan":       map[string]any{"result": "pass"},
+			"tests":      map[string]any{"result": tests},
+		},
+		"level": level,
+		"band":  "B",
+	}}
+}
+
+func TestObserverSigner(t *testing.T) {
+	repo := &Signer{SourceRepositoryURI: "https://github.com/workrr-trust/certify"}
+	if msg := CheckObserverSigner(scannedStatement("scanned", "none"), repo); msg != "" {
+		t.Errorf("valid scan rejected: %s", msg)
+	}
+	for name, c := range map[string]struct {
+		st     map[string]any
+		signer *Signer
+	}{
+		"outside repo": {scannedStatement("scanned", "none"), &Signer{SourceRepositoryURI: "https://github.com/someone/skills"}},
+		"no repo":      {scannedStatement("scanned", "none"), &Signer{}},
+		"banded claim": {scannedStatement("banded", "none"), repo},
+		"tests ran":    {scannedStatement("scanned", "pass"), repo},
+	} {
+		if CheckObserverSigner(c.st, c.signer) == "" {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestScannedNeverAddsToPublisherLevel(t *testing.T) {
+	obs := BundleResult{OK: true, Forge: ForgeGitHub, Observer: true, Statement: scannedStatement("scanned", "none")}
+	if lvl, _ := EvaluateGoldBundles([]BundleResult{obs}, nil); lvl != "scanned" {
+		t.Errorf("scan alone: %q", lvl)
+	}
+	pub := BundleResult{OK: true, Forge: ForgeGitHub, Statement: scannedStatement("banded", "none")}
+	if lvl, _ := EvaluateGoldBundles([]BundleResult{obs, pub}, nil); lvl != "banded" {
+		t.Errorf("scan + banded: %q", lvl)
+	}
+	silver := BundleResult{OK: true, Forge: ForgeGitHub, Statement: scannedStatement("silver", "pass")}
+	obsGL := obs
+	obsGL.Forge = ForgeGitLab
+	if lvl, _ := EvaluateGoldBundles([]BundleResult{silver, obsGL}, nil); lvl != "silver" {
+		t.Errorf("silver + scan on another forge: %q", lvl)
+	}
+	if !LevelMeetsMinimum("scanned", "scanned") || LevelMeetsMinimum("scanned", "banded") {
+		t.Error("scanned ranks below banded")
 	}
 }

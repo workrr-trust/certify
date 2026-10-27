@@ -44,6 +44,8 @@ type BundleResult struct {
 	Error          string `json:"error,omitempty"`
 	Forge          Forge  `json:"forge,omitempty"`
 	SignerIdentity string `json:"signerIdentity,omitempty"`
+	// Observer is set when an observer signer (a public scan) issued it.
+	Observer bool `json:"observer,omitempty"`
 	// Statement is the attestation payload exactly as signed (generic JSON).
 	Statement      any           `json:"statement,omitempty"`
 	PrivateSigning *bool         `json:"privateSigning,omitempty"`
@@ -209,6 +211,24 @@ func predicateCommitAndPath(statement any) (commit, path string) {
 
 func EvaluateGoldBundles(valid []BundleResult, notes []string) (level string, outNotes []string) {
 	outNotes = append([]string{}, notes...)
+	// A public scan never adds to a publisher's level; it stands alone only when no
+	// publisher certificate verifies.
+	var publisher []BundleResult
+	scanned := false
+	for _, b := range valid {
+		if b.Observer {
+			scanned = scanned || DeriveStatementLevel(b.Statement) == "banded"
+		} else {
+			publisher = append(publisher, b)
+		}
+	}
+	if len(publisher) == 0 {
+		if scanned {
+			return "scanned", outNotes
+		}
+		return "", outNotes
+	}
+	valid = publisher
 	var silver []BundleResult
 	var anyValid bool
 	forges := map[Forge]bool{}
@@ -273,7 +293,7 @@ func worstStatus(statuses []string) string {
 // baseline level unless the gate accepted the policy.
 func VerificationHeadline(ok bool, level, policyStatus string, notes []string, band ...string) string {
 	if ok && level != "" {
-		if level == "banded" && len(band) > 0 && band[0] != "" {
+		if (level == "banded" || level == "scanned") && len(band) > 0 && band[0] != "" {
 			return "VERIFIED · level " + level + " · band " + band[0]
 		}
 		return "VERIFIED · level " + level
@@ -387,7 +407,7 @@ func ApplyVerificationGates(level string, policies [][2]string, sources []string
 	if status == "baseline" && !hard {
 		gate.OK = true
 		gate.Level = level
-		if level == "banded" && len(band) > 0 && band[0] != "" {
+		if (level == "banded" || level == "scanned") && len(band) > 0 && band[0] != "" {
 			gate.Band = band[0]
 		}
 	}
@@ -497,6 +517,30 @@ func CheckCertificateSourceAndCommit(statement any, signer *Signer) string {
 	}
 	if signer != nil && signer.SourceRepositoryDigest != "" && !strings.EqualFold(commit, signer.SourceRepositoryDigest) {
 		return "certificate source commit mismatch: predicate claims " + commit + ", Fulcio certificate recorded " + signer.SourceRepositoryDigest
+	}
+	return ""
+}
+
+// CheckObserverSigner: an observer (public scan) signer must run in
+// ObserverRepository, sign level "scanned", and carry no test result.
+func CheckObserverSigner(statement any, signer *Signer) string {
+	if src, _ := predicateField(statement, "source").(map[string]any); src == nil {
+		return "statement has no source field"
+	}
+	if signer == nil || signer.SourceRepositoryURI == "" || canonicalSource(signer.SourceRepositoryURI) != canonicalSource(ObserverRepository) {
+		got := "(no source repository)"
+		if signer != nil && signer.SourceRepositoryURI != "" {
+			got = signer.SourceRepositoryURI
+		}
+		return "public scan signed outside " + ObserverRepository + ": " + got
+	}
+	if lvl, _ := predicateField(statement, "level").(string); lvl != "scanned" {
+		return "public scan certificate claims level " + lvl + ", not scanned"
+	}
+	checks, _ := predicateField(statement, "checks").(map[string]any)
+	tests, _ := checks["tests"].(map[string]any)
+	if r, _ := tests["result"].(string); r != "none" {
+		return "public scan certificate carries a test result"
 	}
 	return ""
 }
@@ -639,7 +683,17 @@ func VerifyBundleWithOptions(bundlePath, artifactDigest string, policy *TrustPol
 		}
 		return r
 	}
-	if mismatch := CheckCertificateSourceAndCommit(statement, signer); mismatch != "" {
+	observer := accepted.Role == RoleObserver
+	var mismatch string
+	switch {
+	case observer:
+		mismatch = CheckObserverSigner(statement, signer)
+	case predicateField(statement, "level") == "scanned":
+		mismatch = "certificate claims level scanned, but its signer is a publisher certifier"
+	default:
+		mismatch = CheckCertificateSourceAndCommit(statement, signer)
+	}
+	if mismatch != "" {
 		r := fail(mismatch, statement)
 		r.Forge = accepted.Forge
 		r.SignerIdentity = signer.SAN
@@ -658,7 +712,7 @@ func VerifyBundleWithOptions(bundlePath, artifactDigest string, policy *TrustPol
 		r.SignerIdentity = signer.SAN
 		return r
 	}
-	out := BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Statement: statement, LogIndexes: indexes}
+	out := BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Observer: observer, Statement: statement, LogIndexes: indexes}
 	if opts.PrivateMode {
 		out.PrivateSigning = &privateSigning
 		out.AnchorHashes = &anchorHashes
@@ -761,7 +815,7 @@ func VerifyArtifact(path string, bundlePaths []string, policy *TrustPolicy, tms 
 	for i, b := range valid {
 		policies[i][0], policies[i][1] = predicatePolicy(b.Statement)
 		sources[i] = predicateSource(b.Statement)
-		if res.Level == "banded" && band == "" {
+		if (res.Level == "banded" || res.Level == "scanned") && band == "" {
 			if bv, ok := predicateField(b.Statement, "band").(string); ok {
 				band = bv
 			}

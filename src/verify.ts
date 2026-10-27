@@ -7,7 +7,7 @@ import { BASELINE_POLICY, BASELINE_POLICY_NAME } from "./checks/policy.js";
 import { normalizeRepoUri } from "./checks/provenance.js";
 import { canonicalJson, digestArtifact, jsonDigest, sha256Hex } from "./digest.js";
 import { baselineRejected, OFFLINE_WARNING, revocationError, type RevocationEntry } from "./trust-feed.js";
-import { DEFAULT_TRUST_POLICY, type AcceptedSigner, type Forge, type TrustPolicy } from "./trust-policy.js";
+import { DEFAULT_TRUST_POLICY, OBSERVER_REPOSITORY, type AcceptedSigner, type Forge, type TrustPolicy } from "./trust-policy.js";
 
 const OID_BUILD_SIGNER_DIGEST = "1.3.6.1.4.1.57264.1.10";
 const OID_SOURCE_REPOSITORY_URI = "1.3.6.1.4.1.57264.1.12";
@@ -32,6 +32,8 @@ export type BundleResult = {
   error?: string;
   forge?: Forge;
   signerIdentity?: string;
+  // Set when an observer signer (a public scan) issued it: level "scanned" at most.
+  observer?: boolean;
   statement?: Statement;
   privateSigning?: boolean;
   anchorHashes?: AnchorHashes;
@@ -45,7 +47,7 @@ export type VerifyStatus = "verified" | "REVOKED" | "rejected";
 export type VerifyResult = {
   ok: boolean;
   status: VerifyStatus;
-  level?: "gold" | "silver" | "banded";
+  level?: "gold" | "silver" | "banded" | "scanned";
   band?: TrustBand;
   artifactDigest: string;
   source?: string;
@@ -153,6 +155,22 @@ export function checkCertificateSourceAndCommit(
   return undefined;
 }
 
+// An observer (public scan) signer must run in OBSERVER_REPOSITORY, sign level
+// "scanned", and never carry a test result: a scan does not run the project's code.
+export function checkObserverSigner(
+  statement: Statement | undefined,
+  signer: { sourceRepositoryURI?: string },
+): string | undefined {
+  const p = statement?.predicate;
+  if (!p?.source) return "statement has no source field";
+  if (!signer.sourceRepositoryURI || canonicalSource(signer.sourceRepositoryURI) !== canonicalSource(OBSERVER_REPOSITORY)) {
+    return `public scan signed outside ${OBSERVER_REPOSITORY}: ${signer.sourceRepositoryURI ?? "(no source repository)"}`;
+  }
+  if (p.level !== "scanned") return `public scan certificate claims level ${p.level}, not scanned`;
+  if (p.checks?.tests?.result !== "none") return "public scan certificate carries a test result";
+  return undefined;
+}
+
 export function matchDescribedSigner(
   policy: TrustPolicy,
   signer: { san: string; issuer?: string; buildSignerDigest?: string },
@@ -233,9 +251,16 @@ export function sourceMatches(certificateURI: string, expected: string): boolean
 export function evaluateGoldBundles(
   valid: BundleResult[],
   notes: string[],
-): { level?: "gold" | "silver" | "banded"; notes: string[] } {
+): { level?: VerifyResult["level"]; notes: string[] } {
   const outNotes = [...notes];
-  const withLevels = valid
+  // A public scan never adds to a publisher's level; it stands alone only when no
+  // publisher certificate verifies.
+  const publisher = valid.filter((b) => !b.observer);
+  if (publisher.length === 0) {
+    const scanned = valid.some((b) => deriveStatementLevel(b.statement) === "banded");
+    return scanned ? { level: "scanned", notes: outNotes } : { notes: outNotes };
+  }
+  const withLevels = publisher
     .map((b) => ({ bundle: b, level: deriveStatementLevel(b.statement) }))
     .filter((x): x is { bundle: BundleResult; level: "silver" | "banded" } => x.level !== undefined);
   if (withLevels.length === 0) return { notes: outNotes };
@@ -264,7 +289,7 @@ export function evaluateGoldBundles(
 
 export function verificationHeadline(r: { ok: boolean; level?: string; band?: TrustBand; policyStatus?: PolicyStatus; notes: string[] }): string {
   if (r.ok && r.level) {
-    if (r.level === "banded" && r.band) return `VERIFIED · level ${r.level} · band ${r.band}`;
+    if ((r.level === "banded" || r.level === "scanned") && r.band) return `VERIFIED · level ${r.level} · band ${r.band}`;
     return `VERIFIED · level ${r.level}`;
   }
   const hard = r.notes.some((n) => n.startsWith("source mismatch:") || n.startsWith("publishers differ:"));
@@ -324,7 +349,7 @@ export function applyVerificationGates(input: {
     return {
       ok: true,
       level: input.level,
-      ...(input.level === "banded" && input.band ? { band: input.band } : {}),
+      ...((input.level === "banded" || input.level === "scanned") && input.band ? { band: input.band } : {}),
       ...base,
     };
   }
@@ -463,7 +488,12 @@ export async function verifyBundle(
       anchorHashes,
     }));
   }
-  const sourceMismatch = checkCertificateSourceAndCommit(statement, described);
+  const observer = accepted.role === "observer";
+  const sourceMismatch = observer
+    ? checkObserverSigner(statement, described)
+    : statement.predicate?.level === "scanned"
+      ? "certificate claims level scanned, but its signer is a publisher certifier"
+      : checkCertificateSourceAndCommit(statement, described);
   if (sourceMismatch) {
     return withLog(fail(sourceMismatch, {
       statement,
@@ -497,6 +527,7 @@ export async function verifyBundle(
     ok: true,
     forge: accepted.forge,
     signerIdentity: identity.subjectAlternativeName,
+    ...(observer ? { observer: true } : {}),
     statement,
     ...(options.privateMode ? { privateSigning, anchorHashes } : {}),
   });
@@ -565,7 +596,8 @@ export async function verifyArtifact(
       notes: evaluated.notes,
     };
   }
-  const band = evaluated.level === "banded" ? valid.find((b) => b.statement?.predicate.band)?.statement?.predicate.band : undefined;
+  const banded = evaluated.level === "banded" || evaluated.level === "scanned";
+  const band = banded ? valid.find((b) => b.statement?.predicate.band)?.statement?.predicate.band : undefined;
   const gated = applyVerificationGates({
     level: evaluated.level,
     band,

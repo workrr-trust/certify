@@ -39,7 +39,8 @@ inputs:
     required: true
   level:
     description: >-
-      Minimum level: banded, silver, or gold. A higher certificate level
+      Minimum level: scanned, banded, silver, or gold (scanned is a public scan by
+      workrr, not signed by the maintainer). A higher certificate level
       satisfies a lower minimum. Defaults to silver.
     required: false
     default: silver

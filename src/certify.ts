@@ -18,7 +18,7 @@ export type Predicate = {
   artifact: { name: string; type: ArtifactType; digestAlgorithm: DigestAlgorithm; fileCount: number };
   source: Source;
   checks: Checks;
-  level: "silver" | "banded";
+  level: "silver" | "banded" | "scanned";
   band?: TrustBand;
   certifier: { name: string; version: string; runtime: Runtime };
   certifiedAt: string;
@@ -53,6 +53,9 @@ export type CertifyOptions = {
   runTestsLocally?: boolean;
   // Optional external WXP outcome band override for Banded artifacts.
   bandOverride?: TrustBand;
+  // Public scan (docs/public-scans.md): the repository URL being observed. The
+  // artifact's tests never run and the level is "scanned".
+  observe?: string;
 };
 
 // Deterministic intrinsic A–E rubric for Banded artifacts (spec §4):
@@ -81,13 +84,15 @@ export function computeTrustBand(artifact: Artifact, policy: Policy, scan: ScanR
 
 export async function certify(path: string, opts: CertifyOptions = {}): Promise<CertifyOutcome> {
   const artifact = await loadArtifact(path);
-  const { source, check: provenance } = await checkProvenance(path);
+  const { source, check: provenance } = await checkProvenance(path, opts.observe);
   const policy = checkPolicy(artifact, opts.policy);
   const scan = await scanArtifact(artifact, opts.policy?.scanExceptions);
 
   let tests: TestsResult = { result: "none" };
   const failures: string[] = [];
-  if (opts.testsReport) {
+  if (opts.observe) {
+    // A scan never runs the observed project's code.
+  } else if (opts.testsReport) {
     if (opts.testsReport.artifactDigest !== artifact.digest.sha256) {
       failures.push("tests report was produced for a different artifact digest");
       tests = { result: "fail" };
@@ -109,12 +114,13 @@ export async function certify(path: string, opts: CertifyOptions = {}): Promise<
   }
   if (tests.result === "fail") failures.push(`tests: exit code ${tests.exitCode ?? "?"}`);
 
-  const level =
-    provenance.result === "pass" && policy.result === "pass" && scan.result === "pass" && tests.result === "pass"
+  const level: Predicate["level"] = opts.observe
+    ? "scanned"
+    : provenance.result === "pass" && policy.result === "pass" && scan.result === "pass" && tests.result === "pass"
       ? "silver"
       : "banded";
   const band =
-    level === "banded" && failures.length === 0
+    level !== "silver" && failures.length === 0
       ? computeTrustBand(artifact, opts.policy ?? BASELINE_POLICY, scan, opts.bandOverride)
       : undefined;
 

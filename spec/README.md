@@ -79,6 +79,7 @@ implementation must pass them.
 |---|---|
 | `silver` | provenance, policy, scan, and tests all `pass` |
 | `banded` | provenance, policy, scan `pass`; tests `none` (not deterministically testable). Receives a deterministic `A`–`E` trust band (`predicate.band`). |
+| `scanned` | a **public scan** ([docs/public-scans.md](../docs/public-scans.md)): an *observer* certifier run by workrr in its own repository read a public commit. Provenance, policy, scan `pass`; tests always `none` (a scan never runs the project's code). Not signed by the maintainer. Carries the same `A`–`E` band as `banded`. Ranks below `banded`. |
 | *(no certificate)* | any check `fail` — the certifier exits non-zero and nothing is signed |
 | `gold` | **Assigned only by verifiers, never by certifiers:** two `silver` certificates for the same digest, signed by accepted certifier identities on two different forges, with identical `checks`. |
 
@@ -111,13 +112,20 @@ A verifier must:
 3. Verify the Sigstore bundle: certificate chain, signature, and Rekor inclusion.
 4. Match the signer identity (SAN, issuer, Build Signer Digest) against the trust policy.
    A SAN of `refs/heads/main`, an unlisted tag, or a digest other than the one pinned
-   for that tag is rejected. The policy embedded in this build lists only
-   `certify.yml@refs/tags/v0.1.0` and `v0.1.1`.
+   for that tag is rejected. The policy embedded in this build lists the
+   `certify.yml` release tags and the `scan.yml` observer tag (`src/trust-policy.ts`).
 5. Cross-check `source.uri` and `source.commit` in the predicate against the signing
    certificate's Fulcio `SourceRepositoryURI` (`1.3.6.1.4.1.57264.1.12`) and
    `SourceRepositoryDigest` (`1.3.6.1.4.1.57264.1.13`) extensions when present, and
    derive the certified level (`silver` or `banded`) directly from the signed `checks`
    results rather than trusting `predicate.level` alone.
+   **Observer signers** (trust policy `"role": "observer"`, the public-scan workflow)
+   are the exception: their Fulcio `SourceRepositoryURI` must be
+   `https://github.com/workrr-trust/certify`, `predicate.level` must be `scanned`
+   and `checks.tests.result` must be `none`. The predicate's `source` is then the
+   observed repository and is not cross-checked against Fulcio. Such a bundle is
+   reported as `scanned` only when no publisher bundle verifies, and it never counts
+   toward `gold`. A publisher signer's certificate that claims `scanned` is rejected.
 6. Read `checks.policy.policyName` and `checks.policy.policyDigest` and report both.
    The name `workrr-baseline-v0.1` is reserved: that name with any other digest is
    rejected. Any other digest is not a baseline result, and the verifier must not
