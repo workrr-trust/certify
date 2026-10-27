@@ -39,7 +39,7 @@ on: { push: { branches: [main], tags: ["v*"] }, workflow_dispatch: {} }
 jobs:
   certify:
     permissions: { contents: read, id-token: write, attestations: write }
-    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.3
+    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.4
     with:
       path: skills/my-skill
 ```
@@ -80,10 +80,10 @@ A certificate is trusted only when its Fulcio identity is
 
 `https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.0`
 
-or the same path at `v0.1.1`, `v0.1.2` or `v0.1.3`. Each released tag except the
+or the same path at `v0.1.1` to `v0.1.4`. Each released tag except the
 newest is pinned to its annotated tag object, the Build Signer Digest Fulcio records
-(`9fbe3e45…`, `78d8c1a9…`, `7ed4c1de…`; full values in
-[`src/trust-policy.ts`](src/trust-policy.ts)). The newest release (`v0.1.3`) is
+(`9fbe3e45…`, `78d8c1a9…`, `7ed4c1de…`, `7cf13e72…`; full values in
+[`src/trust-policy.ts`](src/trust-policy.ts)). The newest release (`v0.1.4`) is
 accepted by exact tag, because a release can't contain its own tag object; the next
 release pins it. Release tags are protected, and the public ledger alerts if one moves.
 
@@ -92,7 +92,8 @@ workflow**, not from the caller. A composite `action.yml` does not get its own
 job. Its steps run inside the caller's job, so a signature minted there would
 name the caller's workflow. The trust policy rejects that certificate.
 Certification stays on [`.github/workflows/certify.yml`](.github/workflows/certify.yml)
-at a released tag (`v0.1.3` today).
+at a released tag (`v0.1.4` today). Public scans sign from
+[`scan.yml`](.github/workflows/scan.yml) instead (level `scanned`; see above).
 
 The action also has no input that replaces the trust policy. The signer set is
 the built-in policy in the commit you pin. `level: gold` fails closed today:
@@ -178,7 +179,7 @@ review. Never move a release tag.
    commit SHA.
 10. Smoke the listing from a different public repository: one step, SHA pin,
     `contents: read`, no OIDC permission. A missing bundle fails the job. A
-    certificate from `certify.yml@v0.1.3` passes at `level: silver` when
+    certificate from `certify.yml@v0.1.4` passes at `level: silver` when
     `source` is the publisher.
 
 ## Verify
@@ -238,10 +239,10 @@ npm test
 - The signed trust policy and revocation feed are implemented ([spec §7](spec/README.md),
   [trust API](docs/trust-api.md)). No policy has been signed or deployed yet, so
   `verify` falls back to the embedded policy and does not see revocations until
-  that deploy. That fallback is the v0.1.3 trust set: `certify.yml` at
-  `refs/tags/v0.1.0` to `v0.1.2`, each pinned to the Build Signer Digest Fulcio
+  that deploy. That fallback is the v0.1.4 trust set: `certify.yml` at
+  `refs/tags/v0.1.0` to `v0.1.3`, each pinned to the Build Signer Digest Fulcio
   recorded for that annotated tag (the tag object, not the peeled commit), and
-  `v0.1.3` by exact tag. `refs/heads/main` is not accepted. `EMBEDDED_POLICY_SEQUENCE` is still 0.
+  `v0.1.4` by exact tag, plus the `scan.yml` observer at `v0.1.4`. `refs/heads/main` is not accepted. `EMBEDDED_POLICY_SEQUENCE` is still 0.
   The policy-signer and revoke-signer Build Signer Digests are still empty.
 - The Marketplace action only verifies. It does not add a signer. A certificate
   still has to come from `certify.yml` at a released tag.
