@@ -20,17 +20,20 @@ Usage:
   workrr test    <path> [--out tests.json]
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
+                        [--observe https://github.com/<owner>/<repo>]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
                         [--source <repo>] [--offline] [--private] [--json]
                         [--trusted-root trusted_root.json] [--anchor-receipt receipt.json]
   workrr anchor  <path> --bundle <file> [--out anchor-request.json]
-  workrr gate    <repo-dir> [--min-level banded|silver|gold] [--policy policy.json]
+  workrr gate    <repo-dir> [--min-level scanned|banded|silver|gold] [--policy policy.json]
                             [--certificates-dir <dir>] [--source <repo>] [--json]
 
   test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
            in CI, use a job WITHOUT signing permission.
   certify  Runs provenance, policy and scan checks; exits 1 if any check fails.
            In GitHub Actions also writes subject-name / subject-digest outputs.
+           --observe makes a public scan (level scanned) of that repository's
+           checkout: tests never run (docs/public-scans.md).
   verify   Checks the artifact digest, Sigstore signature, Rekor inclusion,
            certifier identity, and revocation. Reports the policy name and digest.
            A policy that is not the baseline does not verify at a baseline level.
@@ -74,6 +77,7 @@ async function main(argv: string[]): Promise<number> {
       policy: { type: "string" },
       "tests-report": { type: "string" },
       "run-tests": { type: "boolean" },
+      observe: { type: "string" },
       "statement-out": { type: "string" },
       "predicate-out": { type: "string" },
       bundle: { type: "string", multiple: true },
@@ -109,7 +113,14 @@ async function main(argv: string[]): Promise<number> {
     case "certify": {
       const policy = values.policy ? await readJson<Policy>(values.policy) : BASELINE_POLICY;
       const testsReport = values["tests-report"] ? await readJson<TestsReport>(values["tests-report"]) : undefined;
-      const outcome = await certify(path, { policy, testsReport, runTestsLocally: values["run-tests"] });
+      const observe = values.observe;
+      if (observe !== undefined && !/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/.test(observe)) {
+        throw new Error("--observe must be https://github.com/<owner>/<repo>");
+      }
+      if (observe !== undefined && (testsReport || values["run-tests"])) {
+        throw new Error("--observe never runs tests; drop --tests-report / --run-tests");
+      }
+      const outcome = await certify(path, { policy, testsReport, runTestsLocally: values["run-tests"], observe });
       const { statement } = outcome;
       const p = statement.predicate;
       const c = p.checks;
@@ -184,7 +195,13 @@ async function main(argv: string[]): Promise<number> {
         for (const b of result.bundles) {
           process.stdout.write(b.ok ? `  ✓ ${b.bundlePath} — ${b.forge}: ${b.signerIdentity}\n` : `  ✗ ${b.bundlePath} — ${b.error}\n`);
         }
-        if (result.source) process.stdout.write(`  publisher ${result.source}\n`);
+        if (result.source) {
+          process.stdout.write(
+            result.level === "scanned"
+              ? `  source ${result.source} (public scan by workrr; not signed by the maintainer)\n`
+              : `  publisher ${result.source}\n`,
+          );
+        }
         if (result.policyName || result.policyDigest) {
           process.stdout.write(`  policy ${result.policyName ?? "(unnamed)"}${result.policyDigest ? ` ${result.policyDigest}` : ""}\n`);
         }
@@ -202,8 +219,8 @@ async function main(argv: string[]): Promise<number> {
     }
     case "gate": {
       const minLevel = (values["min-level"] as GateLevel | undefined) ?? "silver";
-      if (!["banded", "silver", "gold"].includes(minLevel)) {
-        throw new Error("--min-level must be banded, silver, or gold");
+      if (!["scanned", "banded", "silver", "gold"].includes(minLevel)) {
+        throw new Error("--min-level must be scanned, banded, silver, or gold");
       }
       const requiredPolicy = values.policy ? await readJson<Policy>(values.policy) : BASELINE_POLICY;
       const trustPolicy = values["trust-policy"] ? await readJson<TrustPolicy>(values["trust-policy"]) : DEFAULT_TRUST_POLICY;

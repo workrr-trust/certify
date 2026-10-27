@@ -222,6 +222,7 @@ function parseSigner(v: unknown): AcceptedSigner | undefined {
   if (typeof v.issuer !== "string" || !v.issuer.startsWith("https://")) return undefined;
   if (typeof v.subjectAlternativeName !== "string" || v.subjectAlternativeName.length === 0) return undefined;
   if (!Array.isArray(v.buildSignerDigests)) return undefined;
+  if (v.role !== undefined && v.role !== "publisher" && v.role !== "observer") return undefined;
   const digests: string[] = [];
   for (const d of v.buildSignerDigests) {
     if (typeof d !== "string" || !GIT_SHA.test(d)) return undefined;
@@ -232,6 +233,7 @@ function parseSigner(v: unknown): AcceptedSigner | undefined {
     issuer: v.issuer,
     subjectAlternativeName: v.subjectAlternativeName,
     buildSignerDigests: digests,
+    ...(v.role === "observer" ? { role: "observer" as const } : {}),
   };
 }
 

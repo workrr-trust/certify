@@ -274,7 +274,17 @@ func parseSignerTree(v any) (AcceptedSigner, bool) {
 		}
 		digests = append(digests, s)
 	}
-	return AcceptedSigner{Forge: Forge(forge), Issuer: issuer, SubjectAlternativeName: san, BuildSignerDigests: digests}, true
+	role := ""
+	if r, present := m["role"]; present {
+		rs, _ := r.(string)
+		if rs != "publisher" && rs != RoleObserver {
+			return AcceptedSigner{}, false
+		}
+		if rs == RoleObserver {
+			role = RoleObserver
+		}
+	}
+	return AcceptedSigner{Forge: Forge(forge), Issuer: issuer, SubjectAlternativeName: san, BuildSignerDigests: digests, Role: role}, true
 }
 
 func parseTrustPolicy(payload string) (*TrustPolicyDocument, error) {

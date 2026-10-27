@@ -1,12 +1,12 @@
 // Consumer-gate rules for the root action. Cryptographic verification stays in
 // src/verify.ts; this only decides whether that result meets the caller's minimum.
 
-const RANK = { banded: 1, silver: 2, gold: 3 };
+const RANK = { scanned: 0, banded: 1, silver: 2, gold: 3 };
 
 export function parseLevel(input) {
   const level = String(input ?? "").trim().toLowerCase();
   if (!level) return "silver";
-  if (!Object.hasOwn(RANK, level)) throw new Error("level must be banded, silver, or gold");
+  if (!Object.hasOwn(RANK, level)) throw new Error("level must be scanned, banded, silver, or gold");
   return level;
 }
 
@@ -22,7 +22,7 @@ export function parseBundles(input) {
 export function levelMeets(actual, minimum) {
   const got = RANK[actual];
   const need = RANK[minimum];
-  if (!got || !need) return false;
+  if (got === undefined || need === undefined) return false;
   return got >= need;
 }
 

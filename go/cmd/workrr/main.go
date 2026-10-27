@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -20,18 +21,21 @@ Usage:
   workrr test    <path> [--out tests.json]
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
+                        [--observe https://github.com/<owner>/<repo>]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
                         [--source <repo>] [--offline] [--private] [--json]
                         [--trusted-root trusted_root.json] [--anchor-receipt receipt.json]
   workrr anchor  <path> --bundle <file> [--out anchor-request.json]
-  workrr gate    <repo-dir> [--min-level banded|silver|gold] [--policy policy.json]
+  workrr gate    <repo-dir> [--min-level scanned|banded|silver|gold] [--policy policy.json]
                             [--certificates-dir <dir>] [--source <repo>] [--json]
 
   test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
            in CI, use a job WITHOUT signing permission.
   certify  Runs provenance, policy and scan checks; exits 1 if any check fails.
            In GitHub Actions also writes subject-name / subject-digest outputs.
+           --observe makes a public scan (level scanned) of that repository's
+           checkout: tests never run (docs/public-scans.md).
   verify   Checks the artifact digest, Sigstore signature, Rekor inclusion,
            certifier identity, and revocation. Reports the policy name and digest.
            A policy that is not the baseline does not verify at a baseline level.
@@ -60,7 +64,9 @@ type args struct {
 	positions []string
 }
 
-var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "anchor-receipt": true, "min-level": true, "certificates-dir": true, "source": true}
+var observeRe = regexp.MustCompile(`^https://github\.com/[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$`)
+
+var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "anchor-receipt": true, "min-level": true, "certificates-dir": true, "source": true, "observe": true}
 var boolOpts = map[string]bool{"run-tests": true, "private": true, "json": true, "offline": true}
 
 // parseArgs follows node:util parseArgs in strict mode: --name value,
@@ -175,6 +181,15 @@ func run(argv []string) (int, error) {
 			if opts.Policy, err = certify.ParsePolicy(b); err != nil {
 				return 0, err
 			}
+		}
+		if o := a.strings["observe"]; o != "" {
+			if !observeRe.MatchString(o) {
+				return 0, fmt.Errorf("--observe must be https://github.com/<owner>/<repo>")
+			}
+			if a.strings["tests-report"] != "" || opts.RunTestsLocally {
+				return 0, fmt.Errorf("--observe never runs tests; drop --tests-report / --run-tests")
+			}
+			opts.Observe = o
 		}
 		if p := a.strings["tests-report"]; p != "" {
 			b, err := os.ReadFile(p)
@@ -339,7 +354,11 @@ func run(argv []string) (int, error) {
 				}
 			}
 			if result.Source != "" {
-				fmt.Printf("  publisher %s\n", result.Source)
+				if result.Level == "scanned" {
+					fmt.Printf("  source %s (public scan by workrr; not signed by the maintainer)\n", result.Source)
+				} else {
+					fmt.Printf("  publisher %s\n", result.Source)
+				}
 			}
 			if result.PolicyName != "" || result.PolicyDigest != "" {
 				name := result.PolicyName
@@ -377,8 +396,8 @@ func run(argv []string) (int, error) {
 		if minLevel == "" {
 			minLevel = "silver"
 		}
-		if minLevel != "banded" && minLevel != "silver" && minLevel != "gold" {
-			return 0, fmt.Errorf("--min-level must be banded, silver, or gold")
+		if minLevel != "scanned" && minLevel != "banded" && minLevel != "silver" && minLevel != "gold" {
+			return 0, fmt.Errorf("--min-level must be scanned, banded, silver, or gold")
 		}
 		reqPolicy := certify.BaselinePolicy()
 		if p := a.strings["policy"]; p != "" {

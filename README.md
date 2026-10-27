@@ -59,6 +59,14 @@ Annotated copy: [`examples/certify.yml`](examples/certify.yml) and the
 [five-minute quickstart](docs/quickstart.md). Do not replace this job with the
 root action. That action cannot certify. See [GitHub Marketplace](#github-marketplace).
 
+## Public scans (nothing to install)
+
+A maintainer who doesn't want an outside workflow in their repo can still have a
+certificate. workrr runs [`scan.yml`](.github/workflows/scan.yml) in this repo at a
+release tag. It reads a public commit, never runs the project's code, and signs the
+result. The level is **`scanned`**: anyone can reproduce it, it is not signed by the
+maintainer, and it ranks below `banded`. See [docs/public-scans.md](docs/public-scans.md).
+
 ## GitHub Marketplace
 
 The action GitHub Marketplace can list is **`workrr verify`**

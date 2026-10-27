@@ -41,7 +41,9 @@ func NormalizeRepoURI(remote string) string {
 	return httpsCredsRe.ReplaceAllLiteralString(dotGitRe.ReplaceAllLiteralString(remote, ""), "https://")
 }
 
-func CheckProvenance(artifactPath string) (Source, ProvenanceResult, error) {
+// CheckProvenance reads the source repo from CI or the origin remote. For a public
+// scan, observedURI names the scanned repository instead (docs/public-scans.md).
+func CheckProvenance(artifactPath string, observedURI ...string) (Source, ProvenanceResult, error) {
 	abs, err := filepath.Abs(artifactPath)
 	if err != nil {
 		return Source{}, ProvenanceResult{}, err
@@ -79,6 +81,8 @@ func CheckProvenance(artifactPath string) (Source, ProvenanceResult, error) {
 	// CI knows the canonical repo URL; locally fall back to the origin remote.
 	uri := ""
 	switch {
+	case len(observedURI) > 0 && observedURI[0] != "":
+		uri = NormalizeRepoURI(observedURI[0])
 	case os.Getenv("GITHUB_SERVER_URL") != "" && os.Getenv("GITHUB_REPOSITORY") != "":
 		uri = os.Getenv("GITHUB_SERVER_URL") + "/" + os.Getenv("GITHUB_REPOSITORY")
 	case os.Getenv("CI_PROJECT_URL") != "":

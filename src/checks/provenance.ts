@@ -21,7 +21,12 @@ export function normalizeRepoUri(remote: string): string {
   return remote.replace(/\.git$/, "").replace(/^https:\/\/[^@/]+@/, "https://");
 }
 
-export async function checkProvenance(artifactPath: string): Promise<{ source: Source; check: ProvenanceResult }> {
+// observedUri: set for a public scan, where the runner's own repository is workrr's and
+// the scanned repository is checked out at a pinned commit.
+export async function checkProvenance(
+  artifactPath: string,
+  observedUri?: string,
+): Promise<{ source: Source; check: ProvenanceResult }> {
   const abs = await realpath(artifactPath);
   const dir = (await stat(abs)).isDirectory() ? abs : dirname(abs);
   let top: string;
@@ -39,7 +44,9 @@ export async function checkProvenance(artifactPath: string): Promise<{ source: S
 
   // CI knows the canonical repo URL; locally fall back to the origin remote.
   let uri = "";
-  if (process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY) {
+  if (observedUri) {
+    uri = normalizeRepoUri(observedUri);
+  } else if (process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY) {
     uri = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`;
   } else if (process.env.CI_PROJECT_URL) {
     uri = process.env.CI_PROJECT_URL;

@@ -10,9 +10,10 @@ import { jsonDigest } from "./digest.js";
 import { DEFAULT_TRUST_POLICY, type TrustPolicy } from "./trust-policy.js";
 import { canonicalSource, sourceMatches, verifyArtifact, verifyBundle } from "./verify.js";
 
-export type GateLevel = "banded" | "silver" | "gold";
+export type GateLevel = "scanned" | "banded" | "silver" | "gold";
 
 const LEVEL_RANK: Record<GateLevel, number> = {
+  scanned: 0,
   banded: 1,
   silver: 2,
   gold: 3,
@@ -112,6 +113,15 @@ export async function findSkillBundles(
   return existing;
 }
 
+// Level from verified bundles: a public scan ("scanned") counts only when no
+// publisher certificate verified.
+function levelOfBundles(valid: { forge?: string; observer?: boolean; statement?: { predicate: { level: string } } }[]): GateLevel {
+  const publisher = valid.filter((b) => !b.observer && b.statement?.predicate.level !== "scanned");
+  if (publisher.length === 0) return "scanned";
+  const forges = new Set(publisher.filter((b) => b.statement?.predicate.level === "silver").map((b) => b.forge));
+  return forges.size >= 2 ? "gold" : forges.size === 1 ? "silver" : "banded";
+}
+
 function sourceAllowed(certificateUri: string, allowedSources: string[]): boolean {
   for (const allowed of allowedSources) {
     if (sourceMatches(certificateUri, allowed)) return true;
@@ -184,10 +194,7 @@ export async function runOrgPolicyGate(rootDir: string, options: OrgGateOptions 
             reasons.push(`publisher ${uri} is not in allowed sources (${options.allowedSources.join(", ")})`);
           }
         }
-        const forges = new Set(
-          valid.filter((b) => b.statement?.predicate.level === "silver").map((b) => b.forge),
-        );
-        level = forges.size >= 2 ? "gold" : valid.some((b) => b.statement?.predicate.level === "silver") ? "silver" : "banded";
+        level = levelOfBundles(valid);
       }
     } else {
       const verifyRes = await verifyArtifact(absPath, bundles, trustPolicy);
@@ -204,12 +211,7 @@ export async function runOrgPolicyGate(rootDir: string, options: OrgGateOptions 
       }
       const valid = verifyRes.bundles.filter((b) => b.ok && b.statement);
       if (valid.length > 0) {
-        const forges = new Set(
-          valid.filter((b) => b.statement?.predicate.level === "silver").map((b) => b.forge),
-        );
-        level =
-          verifyRes.level ??
-          (forges.size >= 2 ? "gold" : valid.some((b) => b.statement?.predicate.level === "silver") ? "silver" : "banded");
+        level = verifyRes.level ?? levelOfBundles(valid);
       }
     }
 

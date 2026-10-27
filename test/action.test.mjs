@@ -27,7 +27,7 @@ const THIRD_PARTY = new Set([
   "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6",
 ]);
 
-const TRUSTED_CERTIFIER = /^workrr-trust\/certify\/\.github\/workflows\/certify\.yml@v0\.1\.[0-3]$/;
+const TRUSTED_CERTIFIER = /^workrr-trust\/certify\/\.github\/workflows\/certify\.yml@v0\.1\.[0-4]$/;
 
 function allowedUse(ref) {
   if (ref.startsWith("./")) return true;

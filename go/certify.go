@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	Version       = "0.1.3"
+	Version       = "0.1.4"
 	PredicateType = "https://trust.workrr.ai/certificate/v0.1"
 	StatementType = "https://in-toto.io/Statement/v1"
 )
@@ -81,6 +81,9 @@ type CertifyOptions struct {
 	RunTestsLocally bool
 	// Optional external WXP outcome band override for Banded artifacts.
 	BandOverride string
+	// Public scan: the repository URL being observed. Tests never run and the
+	// level is "scanned" (docs/public-scans.md).
+	Observe string
 }
 
 var (
@@ -124,7 +127,7 @@ func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
 	if err != nil {
 		return nil, err
 	}
-	source, provenance, err := CheckProvenance(path)
+	source, provenance, err := CheckProvenance(path, opts.Observe)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +141,8 @@ func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
 	tests := TestsResult{Result: "none"}
 	failures := []string{}
 	switch {
+	case opts.Observe != "":
+		// A scan never runs the observed project's code.
 	case opts.TestsReport != nil:
 		if opts.TestsReport.ArtifactDigest != a.Digest.SHA256 {
 			failures = append(failures, "tests report was produced for a different artifact digest")
@@ -186,7 +191,12 @@ func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
 	// Silver only when every check passed. A reserved-name or other policy failure
 	// must not leave level "silver" on the statement.
 	p.Level = "banded"
-	if provenance.Result == "pass" && policy.Result == "pass" && scan.Result == "pass" && tests.Result == "pass" {
+	if opts.Observe != "" {
+		p.Level = "scanned"
+		if len(failures) == 0 {
+			p.Band = ComputeTrustBand(a, opts.Policy, scan, opts.BandOverride)
+		}
+	} else if provenance.Result == "pass" && policy.Result == "pass" && scan.Result == "pass" && tests.Result == "pass" {
 		p.Level = "silver"
 	} else if len(failures) == 0 {
 		p.Band = ComputeTrustBand(a, opts.Policy, scan, opts.BandOverride)
