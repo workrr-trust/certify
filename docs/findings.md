@@ -45,7 +45,9 @@ uncertifiable but are not findings, and nothing is signed for them.
 **Kind.** A finding is `concealment` when a failing rule is one whose matches
 are rarely accidental: Unicode tag characters (WT002) or bidirectional overrides
 (WT003), in a file that is not a test or fixture (sanitizers keep such characters
-in their tests on purpose). Everything else is `check`, including the phrase rules
+in their tests on purpose) and not bundled or minified code (`dist/`, `build/`,
+`*.min.js`, `*.bundle.js`: libraries such as mermaid ship these characters in their
+own text handling). Those matches still fail the scan; they are listed as `check`. Everything else is `check`, including the phrase rules
 WT007 (instructions to keep something from the user) and WT008 (instructions in a
 hidden HTML comment): wording matches innocent text too often to be called
 concealment. Listings show concealment findings at once. A `check` finding gets a
