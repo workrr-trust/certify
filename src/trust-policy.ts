@@ -38,6 +38,11 @@ export type TrustPolicy = { version: string; signers: AcceptedSigner[] };
 //          commit 2bbb72964e862c326af210c0117e47c740b463b0
 //   v0.1.3 tag 7cf13e7228c6f2bdf01b6d3ab670edef6f77fe4b
 //          commit 46c524bf97e8f580375edff746c847b86f4b23f9
+//   v0.1.4 tag 54b6c3a8f7818d1c8edba145edbf2157c35208d9
+//          commit 14466afa6a8bc8612292b74ae63e764590041031
+//
+// scan.yml is dispatched directly (workflow_dispatch), not called, so for it Fulcio
+// records the tagged COMMIT, not the tag object: scan.yml@v0.1.4 is 14466afa….
 //
 // A release can't list its own digest: the tag object names the commit that would
 // contain it. So the newest release is accepted by its exact tag name alone, and the
@@ -76,17 +81,31 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
       buildSignerDigests: ["7cf13e7228c6f2bdf01b6d3ab670edef6f77fe4b"],
     },
     {
-      // NEWEST: this release, by exact tag; v0.1.5 pins its digest.
       forge: "github",
       issuer: "https://token.actions.githubusercontent.com",
       subjectAlternativeName: `^${CERTIFY_SAN}v0\\.1\\.4$`,
+      buildSignerDigests: ["54b6c3a8f7818d1c8edba145edbf2157c35208d9"],
+    },
+    {
+      // NEWEST: this release, by exact tag; v0.1.6 pins its digest.
+      forge: "github",
+      issuer: "https://token.actions.githubusercontent.com",
+      subjectAlternativeName: `^${CERTIFY_SAN}v0\\.1\\.5$`,
       buildSignerDigests: [],
     },
     {
-      // Public scans (scan.yml, workflow_dispatch). NEWEST, by exact tag; v0.1.5 pins it.
+      // Public scans (scan.yml, workflow_dispatch): the tagged commit.
       forge: "github",
       issuer: "https://token.actions.githubusercontent.com",
       subjectAlternativeName: `^${SCAN_SAN}v0\\.1\\.4$`,
+      buildSignerDigests: ["14466afa6a8bc8612292b74ae63e764590041031"],
+      role: "observer",
+    },
+    {
+      // Public scans and signed findings. NEWEST, by exact tag; v0.1.6 pins its commit.
+      forge: "github",
+      issuer: "https://token.actions.githubusercontent.com",
+      subjectAlternativeName: `^${SCAN_SAN}v0\\.1\\.5$`,
       buildSignerDigests: [],
       role: "observer",
     },

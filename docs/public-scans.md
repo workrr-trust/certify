@@ -24,8 +24,9 @@ What it does **not** say:
 - It does not say "safe". Like every level, it reports which checks passed at one
   commit.
 
-Levels from weakest to strongest are `scanned` < `banded` < `silver` < `gold`. A
-scanned certificate never counts toward Gold. When a maintainer-signed certificate
+Levels from least to most scrutiny are Scanned (`scanned`) < Signed (`banded`) <
+Tested (`silver`) < Reproduced (`gold`). A scanned certificate never counts toward
+Reproduced. When a maintainer-signed certificate
 also verifies for the same digest, the maintainer's level is reported.
 
 ## Why this keeps workrr out of the trust path
@@ -41,7 +42,8 @@ also verifies for the same digest, the maintainer's level is reported.
   commit.
 
 workrr chooses *which* commits to scan, so a missing certificate means nothing.
-Only a present one carries a claim, and anyone can check that claim.
+Only a present one carries a claim, and anyone can check that claim. A scan that
+fails a security check signs a finding instead; see [findings.md](findings.md).
 
 ## Mechanics
 

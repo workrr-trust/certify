@@ -192,7 +192,7 @@ func TestComputeTrustBand(t *testing.T) {
 	}
 
 	gate := ApplyVerificationGates("banded", [][2]string{{BaselinePolicyName, BaselinePolicy().Digest()}}, []string{"https://github.com/workrr-trust/sample-skills"}, "", nil, "B")
-	if !gate.OK || gate.Band != "B" || VerificationHeadline(gate.OK, gate.Level, gate.PolicyStatus, gate.Notes, gate.Band) != "VERIFIED · level banded · band B" {
+	if !gate.OK || gate.Band != "B" || VerificationHeadline(gate.OK, gate.Level, gate.PolicyStatus, gate.Notes, gate.Band) != "VERIFIED · Signed (banded) · band B" {
 		t.Fatalf("unexpected banded gate: %+v", gate)
 	}
 }
@@ -391,9 +391,17 @@ func TestMatchSigner(t *testing.T) {
 	}
 	// The newest release is accepted by its exact tag with any digest; later or
 	// look-alike tags are not.
-	v014 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.4", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
-	if s := MatchSigner(&DefaultTrustPolicy, v014); s == nil || s.Role != "" {
-		t.Errorf("newest release tag v0.1.4: got %+v", s)
+	v015 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.5", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	if s := MatchSigner(&DefaultTrustPolicy, v015); s == nil || s.Role != "" {
+		t.Errorf("newest release tag v0.1.5: got %+v", s)
+	}
+	v014 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.4", Issuer: gh.Issuer, BuildSignerDigest: "54b6c3a8f7818d1c8edba145edbf2157c35208d9"}
+	if MatchSigner(&DefaultTrustPolicy, v014) == nil {
+		t.Error("rejected v0.1.4 at its pinned tag digest")
+	}
+	v014.BuildSignerDigest = "14466afa6a8bc8612292b74ae63e764590041031"
+	if MatchSigner(&DefaultTrustPolicy, v014) != nil {
+		t.Error("accepted certify.yml@v0.1.4 at the peeled commit")
 	}
 	v013 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.3", Issuer: gh.Issuer, BuildSignerDigest: "7cf13e7228c6f2bdf01b6d3ab670edef6f77fe4b"}
 	if MatchSigner(&DefaultTrustPolicy, v013) == nil {
@@ -403,9 +411,18 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v013) != nil {
 		t.Error("accepted v0.1.3 at the peeled commit")
 	}
-	scan := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.4", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	scan := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.5", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
 	if s := MatchSigner(&DefaultTrustPolicy, scan); s == nil || s.Role != RoleObserver {
-		t.Errorf("scan.yml@v0.1.4 should be an observer, got %+v", s)
+		t.Errorf("scan.yml@v0.1.5 should be an observer, got %+v", s)
+	}
+	// scan.yml is dispatched directly: Fulcio records the tagged commit.
+	scan14 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.4", Issuer: gh.Issuer, BuildSignerDigest: "14466afa6a8bc8612292b74ae63e764590041031"}
+	if s := MatchSigner(&DefaultTrustPolicy, scan14); s == nil || s.Role != RoleObserver {
+		t.Errorf("scan.yml@v0.1.4 at its commit should be an observer, got %+v", s)
+	}
+	scan14.BuildSignerDigest = "54b6c3a8f7818d1c8edba145edbf2157c35208d9"
+	if MatchSigner(&DefaultTrustPolicy, scan14) != nil {
+		t.Error("accepted scan.yml@v0.1.4 at the tag object")
 	}
 	scan.SAN = "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/heads/main"
 	if MatchSigner(&DefaultTrustPolicy, scan) != nil {
@@ -419,7 +436,7 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v012) != nil {
 		t.Error("accepted v0.1.2 at the peeled commit")
 	}
-	for _, ref := range []string{"refs/tags/v0.1.5", "refs/tags/v0.1.4x", "refs/tags/v0.1.4-rc1", "refs/heads/v0.1.4"} {
+	for _, ref := range []string{"refs/tags/v0.1.6", "refs/tags/v0.1.5x", "refs/tags/v0.1.5-rc1", "refs/heads/v0.1.5"} {
 		s := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@" + ref, Issuer: gh.Issuer, BuildSignerDigest: tagV010}
 		if MatchSigner(&DefaultTrustPolicy, s) != nil {
 			t.Errorf("accepted %s", ref)
@@ -757,5 +774,39 @@ func TestScannedNeverAddsToPublisherLevel(t *testing.T) {
 	}
 	if !LevelMeetsMinimum("scanned", "scanned") || LevelMeetsMinimum("scanned", "banded") {
 		t.Error("scanned ranks below banded")
+	}
+}
+
+func TestFindings(t *testing.T) {
+	observe := "https://github.com/someone/skills"
+	bad, err := Certify(filepath.Join("..", "test", "fixtures", "bad-skill"), CertifyOptions{Observe: observe})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := NewFindingStatement(bad)
+	if f == nil || f.PredicateType != FindingPredicateType || f.Predicate.Kind != "concealment" {
+		t.Fatalf("bad-skill: want a concealment finding, got %+v", f)
+	}
+	if !slices.ContainsFunc(f.Predicate.Findings, func(i FindingItem) bool { return i.Rule == "WT002" && i.Line > 0 }) {
+		t.Errorf("bad-skill: no WT002 item in %+v", f.Predicate.Findings)
+	}
+	good, err := Certify(filepath.Join("..", "test", "fixtures", "good-skill"), CertifyOptions{Observe: observe})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if NewFindingStatement(good) != nil {
+		t.Error("good-skill: a passing scan made a finding")
+	}
+	pub, err := Certify(filepath.Join("..", "test", "fixtures", "bad-skill"), CertifyOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if NewFindingStatement(pub) != nil {
+		t.Error("a publisher run made a finding")
+	}
+	for in, want := range map[string]string{"Signed": "banded", "tested": "silver", "REPRODUCED": "gold", "scanned": "scanned", "platinum": ""} {
+		if got := ParseLevel(in); got != want {
+			t.Errorf("ParseLevel(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

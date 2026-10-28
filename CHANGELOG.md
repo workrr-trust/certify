@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.5 (2026-10-28)
+
+- **Signed findings** ([docs/findings.md](docs/findings.md)): a public scan that
+  fails a security check (a high or critical scan rule, a compiled binary, an
+  escaping symlink) signs a finding with its own predicate type,
+  `https://trust.workrr.ai/finding/v0.1`, so it can never verify as a certificate.
+  It states facts: rule, file, line, commit, and a kind (`concealment` for WT002,
+  WT003, WT007, WT008; otherwise `check`). Layout problems alone sign nothing.
+  `workrr certify --observe … --finding-out finding.json` writes it.
+- `workrr verify-finding <path> --bundle <file>` (TypeScript and Go): checks the
+  signature, Rekor inclusion and observer signer, then reproduces the finding by
+  re-running the checks on the checkout. Only observer signers may issue findings.
+- **Level names** for scrutiny: Scanned, Signed, Tested, Reproduced (wire values
+  `scanned`, `banded`, `silver`, `gold` unchanged). The verify headline is now
+  `VERIFIED · Tested (silver)`; scripts matching `level silver` need updating.
+  `--min-level` and the action's `level` accept either name.
+- `scan.yml` takes a batch of up to 50 targets (`targets` JSON input) and runs them
+  as a matrix; each job uploads `workrr-scan-<index>` with `statement.json` and the
+  signed bundle. Single-target inputs still work.
+- `watch.yml` + `scripts/watch.mjs`: hourly, checks targets from the ledger's
+  `scan-targets.txt` (about 3,000 per run, each once a day; GH Archive pushes
+  first) and dispatches `scan.yml` for any path with a new commit. No signing
+  permission.
+- Trust policy: pin v0.1.4: `certify.yml` to its tag object
+  `54b6c3a8f7818d1c8edba145edbf2157c35208d9`, and `scan.yml` to the tagged commit
+  `14466afa6a8bc8612292b74ae63e764590041031` (dispatched workflows record the
+  commit). Accept this release (`certify.yml` and `scan.yml` at
+  `refs/tags/v0.1.5`) by exact tag until v0.1.6 pins it.
+
 ## 0.1.4 (2026-10-27)
 
 - **Public scans** ([docs/public-scans.md](docs/public-scans.md)): a new level,

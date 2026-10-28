@@ -2,11 +2,15 @@
 // src/verify.ts; this only decides whether that result meets the caller's minimum.
 
 const RANK = { scanned: 0, banded: 1, silver: 2, gold: 3 };
+// Scrutiny names (src/levels.ts) for the wire values.
+const NAMES = { scanned: "Scanned", banded: "Signed", silver: "Tested", gold: "Reproduced" };
+const ALIASES = { signed: "banded", tested: "silver", reproduced: "gold" };
 
 export function parseLevel(input) {
-  const level = String(input ?? "").trim().toLowerCase();
+  let level = String(input ?? "").trim().toLowerCase();
   if (!level) return "silver";
-  if (!Object.hasOwn(RANK, level)) throw new Error("level must be scanned, banded, silver, or gold");
+  level = ALIASES[level] ?? level;
+  if (!Object.hasOwn(RANK, level)) throw new Error("level must be scanned, signed, tested, or reproduced");
   return level;
 }
 
@@ -36,7 +40,7 @@ export function gate(result, minimum) {
   }
   if (!result.ok || !result.level || !levelMeets(result.level, minimum)) {
     if (result.ok && result.level && !levelMeets(result.level, minimum)) {
-      notes.push(`level ${result.level} is below required ${minimum}`);
+      notes.push(`level ${NAMES[result.level]} (${result.level}) is below required ${NAMES[minimum]} (${minimum})`);
     }
     return {
       verified: false,
@@ -48,7 +52,7 @@ export function gate(result, minimum) {
   return {
     verified: true,
     level: result.level,
-    headline: `VERIFIED · level ${result.level}`,
+    headline: `VERIFIED · ${NAMES[result.level]} (${result.level})`,
     notes,
   };
 }

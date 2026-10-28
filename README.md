@@ -64,8 +64,27 @@ root action. That action cannot certify. See [GitHub Marketplace](#github-market
 A maintainer who doesn't want an outside workflow in their repo can still have a
 certificate. workrr runs [`scan.yml`](.github/workflows/scan.yml) in this repo at a
 release tag. It reads a public commit, never runs the project's code, and signs the
-result. The level is **`scanned`**: anyone can reproduce it, it is not signed by the
-maintainer, and it ranks below `banded`. See [docs/public-scans.md](docs/public-scans.md).
+result. The level is **Scanned**: anyone can reproduce it, it is not signed by the
+maintainer, and it ranks below Signed. See [docs/public-scans.md](docs/public-scans.md).
+
+A scan that fails a security check signs a **finding** instead: a reproducible,
+factual record (rule, file, line, commit) that `workrr verify-finding` re-checks.
+[`watch.yml`](.github/workflows/watch.yml) re-scans each target when its path
+changes. There is no opt-out from scanning public code. See [docs/findings.md](docs/findings.md).
+
+## Levels
+
+Named for how much scrutiny an artifact got. Signed predicates keep the v0.1 wire
+values; verifiers print both (`VERIFIED · Tested (silver)`).
+
+| Level | Wire value | What happened |
+|---|---|---|
+| Scanned | `scanned` | workrr read a public commit; checks passed; not signed by the maintainer |
+| Signed | `banded` | The maintainer's own CI signed it; checks passed |
+| Tested | `silver` | Signed, and the artifact's tests passed in an isolated job |
+| Reproduced | `gold` | Two independent forges certified the same digest |
+
+**Flagged** is outside the ladder: a signed finding for the newest commit.
 
 ## GitHub Marketplace
 
@@ -80,10 +99,10 @@ A certificate is trusted only when its Fulcio identity is
 
 `https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.0`
 
-or the same path at `v0.1.1` to `v0.1.4`. Each released tag except the
+or the same path at `v0.1.1` to `v0.1.5`. Each released tag except the
 newest is pinned to its annotated tag object, the Build Signer Digest Fulcio records
-(`9fbe3e45…`, `78d8c1a9…`, `7ed4c1de…`, `7cf13e72…`; full values in
-[`src/trust-policy.ts`](src/trust-policy.ts)). The newest release (`v0.1.4`) is
+(`9fbe3e45…`, `78d8c1a9…`, `7ed4c1de…`, `7cf13e72…`, `54b6c3a8…`; full values in
+[`src/trust-policy.ts`](src/trust-policy.ts)). The newest release (`v0.1.5`) is
 accepted by exact tag, because a release can't contain its own tag object; the next
 release pins it. Release tags are protected, and the public ledger alerts if one moves.
 
@@ -92,8 +111,10 @@ workflow**, not from the caller. A composite `action.yml` does not get its own
 job. Its steps run inside the caller's job, so a signature minted there would
 name the caller's workflow. The trust policy rejects that certificate.
 Certification stays on [`.github/workflows/certify.yml`](.github/workflows/certify.yml)
-at a released tag (`v0.1.4` today). Public scans sign from
-[`scan.yml`](.github/workflows/scan.yml) instead (level `scanned`; see above).
+at a released tag (`v0.1.5` today). Public scans and findings sign from
+[`scan.yml`](.github/workflows/scan.yml) instead (level Scanned; see above). It is
+dispatched, not called, so Fulcio records the tagged commit for it, and older
+releases of it are pinned to that commit (`14466afa…` for `v0.1.4`).
 
 The action also has no input that replaces the trust policy. The signer set is
 the built-in policy in the commit you pin. `level: gold` fails closed today:
@@ -232,17 +253,18 @@ npm test
 | provenance | The artifact is committed and unchanged at the recorded source commit |
 | policy | Conforms to the named policy, pinned by digest. The name `workrr-baseline-v0.1` is reserved for that baseline; a verifier reports a baseline level only for its digest |
 | scan | No high/critical findings from ruleset `workrr-scan-v0.1`, pinned by digest. **Not** "safe" or "injection-free." |
-| tests | The artifact's own declared suite passed. Without a suite the level is `banded`. |
+| tests | The artifact's own declared suite passed. Without a suite the level is Signed (`banded`). |
 
 ## Known limits (v0.1)
 
 - The signed trust policy and revocation feed are implemented ([spec §7](spec/README.md),
   [trust API](docs/trust-api.md)). No policy has been signed or deployed yet, so
   `verify` falls back to the embedded policy and does not see revocations until
-  that deploy. That fallback is the v0.1.4 trust set: `certify.yml` at
-  `refs/tags/v0.1.0` to `v0.1.3`, each pinned to the Build Signer Digest Fulcio
+  that deploy. That fallback is the v0.1.5 trust set: `certify.yml` at
+  `refs/tags/v0.1.0` to `v0.1.4`, each pinned to the Build Signer Digest Fulcio
   recorded for that annotated tag (the tag object, not the peeled commit), and
-  `v0.1.4` by exact tag, plus the `scan.yml` observer at `v0.1.4`. `refs/heads/main` is not accepted. `EMBEDDED_POLICY_SEQUENCE` is still 0.
+  `v0.1.5` by exact tag, plus the `scan.yml` observer at `v0.1.4` (pinned to its
+  commit) and `v0.1.5` (by exact tag). `refs/heads/main` is not accepted. `EMBEDDED_POLICY_SEQUENCE` is still 0.
   The policy-signer and revoke-signer Build Signer Digests are still empty.
 - The Marketplace action only verifies. It does not add a signer. A certificate
   still has to come from `certify.yml` at a released tag.

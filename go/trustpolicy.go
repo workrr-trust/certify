@@ -50,6 +50,11 @@ type TrustPolicy struct {
 //	       commit 2bbb72964e862c326af210c0117e47c740b463b0
 //	v0.1.3 tag 7cf13e7228c6f2bdf01b6d3ab670edef6f77fe4b
 //	       commit 46c524bf97e8f580375edff746c847b86f4b23f9
+//	v0.1.4 tag 54b6c3a8f7818d1c8edba145edbf2157c35208d9
+//	       commit 14466afa6a8bc8612292b74ae63e764590041031
+//
+// scan.yml is dispatched directly (workflow_dispatch), not called, so for it Fulcio
+// records the tagged COMMIT, not the tag object: scan.yml@v0.1.4 is 14466afa….
 //
 // A release can't list its own digest: the tag object names the commit that would
 // contain it. So the newest release is accepted by its exact tag name alone, and the
@@ -88,17 +93,31 @@ var DefaultTrustPolicy = TrustPolicy{
 			BuildSignerDigests:     []string{"7cf13e7228c6f2bdf01b6d3ab670edef6f77fe4b"},
 		},
 		{
-			// Newest: this release, by exact tag; v0.1.5 pins its digest.
 			Forge:                  ForgeGitHub,
 			Issuer:                 "https://token.actions.githubusercontent.com",
 			SubjectAlternativeName: `^` + certifySAN + `v0\.1\.4$`,
+			BuildSignerDigests:     []string{"54b6c3a8f7818d1c8edba145edbf2157c35208d9"},
+		},
+		{
+			// Newest: this release, by exact tag; v0.1.6 pins its digest.
+			Forge:                  ForgeGitHub,
+			Issuer:                 "https://token.actions.githubusercontent.com",
+			SubjectAlternativeName: `^` + certifySAN + `v0\.1\.5$`,
 			BuildSignerDigests:     []string{},
 		},
 		{
-			// Public scans (scan.yml, workflow_dispatch). Newest, by exact tag; v0.1.5 pins it.
+			// Public scans (scan.yml, workflow_dispatch): the tagged commit.
 			Forge:                  ForgeGitHub,
 			Issuer:                 "https://token.actions.githubusercontent.com",
 			SubjectAlternativeName: `^` + scanSAN + `v0\.1\.4$`,
+			BuildSignerDigests:     []string{"14466afa6a8bc8612292b74ae63e764590041031"},
+			Role:                   RoleObserver,
+		},
+		{
+			// Public scans and signed findings. Newest, by exact tag; v0.1.6 pins its commit.
+			Forge:                  ForgeGitHub,
+			Issuer:                 "https://token.actions.githubusercontent.com",
+			SubjectAlternativeName: `^` + scanSAN + `v0\.1\.5$`,
 			BuildSignerDigests:     []string{},
 			Role:                   RoleObserver,
 		},

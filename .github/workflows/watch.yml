@@ -1,0 +1,79 @@
+# Follow public repos and re-scan a target when its path changes (docs/findings.md).
+# The maintainer installs nothing. This workflow cannot sign: it only dispatches
+# scan.yml at SCAN_TAG, which signs certificates and findings as the observer.
+#
+# Targets are the ledger's scan-targets.txt ("owner/repo path" per line). State
+# (the last commit dispatched per target) is carried between runs as the
+# newest watch-state artifact.
+name: watch
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+    inputs:
+      sweep:
+        description: Targets to check besides those pushed recently
+        default: "3000"
+      max:
+        description: Most targets to dispatch this run
+        default: "1000"
+      dry_run:
+        description: List what would be scanned without dispatching
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: watch
+
+env:
+  # The release scan.yml runs at. Bump with each release (docs/findings.md).
+  SCAN_TAG: v0.1.5
+  TARGETS_URL: https://raw.githubusercontent.com/workrr-trust/ledger/main/scan-targets.txt
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Previous state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The newest watch-state artifact (dry runs upload none).
+          id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=watch-state&per_page=1" -q '.artifacts[0] | select(.expired | not) | .id')
+          mkdir -p "$RUNNER_TEMP/prev"
+          if [ -n "$id" ] && gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" >"$RUNNER_TEMP/prev.zip" && unzip -q "$RUNNER_TEMP/prev.zip" -d "$RUNNER_TEMP/prev"; then
+            echo "state from artifact $id: $(wc -l <"$RUNNER_TEMP/prev/state.tsv") target(s)"
+          else
+            echo "no previous state; starting fresh"
+          fi
+      - name: Watch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE_IN: ${{ runner.temp }}/prev/state.tsv
+          STATE_OUT: ${{ runner.temp }}/state.tsv
+          SWEEP: ${{ inputs.sweep || '3000' }}
+          MAX: ${{ inputs.max || '1000' }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: |
+          set -o pipefail
+          [[ $SWEEP =~ ^[0-9]{1,6}$ && $MAX =~ ^[0-9]{1,6}$ ]] || { echo "sweep and max must be numbers"; exit 1; }
+          node scripts/watch.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: inputs.dry_run != true
+        with:
+          name: watch-state
+          path: ${{ runner.temp }}/state.tsv
+          retention-days: 30

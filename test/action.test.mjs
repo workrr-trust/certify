@@ -63,7 +63,7 @@ test("level ordering: gold satisfies silver, banded does not, default is silver"
   assert.equal(parseLevel(""), "silver");
   assert.equal(parseLevel("  Silver "), "silver");
   assert.equal(parseLevel("gold"), "gold");
-  assert.throws(() => parseLevel("platinum"), /banded, silver, or gold/);
+  assert.throws(() => parseLevel("platinum"), /signed, tested, or reproduced/);
   assert.equal(levelMeets("gold", "silver"), true);
   assert.equal(levelMeets("silver", "silver"), true);
   assert.equal(levelMeets("silver", "gold"), false);
@@ -84,7 +84,7 @@ test("gate fails closed below the minimum and keeps a higher level", () => {
     {
       ok: true,
       level: "silver",
-      headline: "VERIFIED · level silver",
+      headline: "VERIFIED · Tested (silver)",
       notes: [revocation],
       bundles: [{ ok: true, bundlePath: "a.json", signerIdentity: "certify.yml@v0.1.1" }],
     },
@@ -92,13 +92,13 @@ test("gate fails closed below the minimum and keeps a higher level", () => {
   );
   assert.equal(silver.verified, true);
   assert.equal(silver.level, "silver");
-  assert.equal(silver.headline, "VERIFIED · level silver");
+  assert.equal(silver.headline, "VERIFIED · Tested (silver)");
 
-  const tooLow = gate({ ...silver, ok: true, level: "silver", headline: "VERIFIED · level silver", notes: [revocation], bundles: [] }, "gold");
+  const tooLow = gate({ ...silver, ok: true, level: "silver", headline: "VERIFIED · Tested (silver)", notes: [revocation], bundles: [] }, "gold");
   assert.equal(tooLow.verified, false);
   assert.equal(tooLow.level, "silver");
   assert.equal(tooLow.headline, "NOT VERIFIED");
-  assert.ok(tooLow.notes.some((note) => note.includes("level silver is below required gold")));
+  assert.ok(tooLow.notes.some((note) => note.includes("level Tested (silver) is below required Reproduced (gold)")));
 
   const custom = gate(
     { ok: false, headline: "custom policy, not baseline", notes: [revocation], bundles: [] },
@@ -185,7 +185,7 @@ test("usage errors exit 2 and a missing artifact exits 1", async () => {
     await main({ ...env, WORKRR_PATH: "x", WORKRR_BUNDLE: "c.json", WORKRR_SOURCE: "a/b", WORKRR_LEVEL: "safe" }),
     2,
   );
-  assert.match(await readFile(summary, "utf8"), /banded, silver, or gold/);
+  assert.match(await readFile(summary, "utf8"), /signed, tested, or reproduced/);
   await writeFile(output, "");
   await writeFile(summary, "");
   const code = await main({

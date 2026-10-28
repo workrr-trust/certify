@@ -7,6 +7,7 @@ import { BASELINE_POLICY, BASELINE_POLICY_NAME } from "./checks/policy.js";
 import { normalizeRepoUri } from "./checks/provenance.js";
 import { canonicalJson, digestArtifact, jsonDigest, sha256Hex } from "./digest.js";
 import { baselineRejected, OFFLINE_WARNING, revocationError, type RevocationEntry } from "./trust-feed.js";
+import { levelName } from "./levels.js";
 import { DEFAULT_TRUST_POLICY, OBSERVER_REPOSITORY, type AcceptedSigner, type Forge, type TrustPolicy } from "./trust-policy.js";
 
 const OID_BUILD_SIGNER_DIGEST = "1.3.6.1.4.1.57264.1.10";
@@ -289,8 +290,10 @@ export function evaluateGoldBundles(
 
 export function verificationHeadline(r: { ok: boolean; level?: string; band?: TrustBand; policyStatus?: PolicyStatus; notes: string[] }): string {
   if (r.ok && r.level) {
-    if ((r.level === "banded" || r.level === "scanned") && r.band) return `VERIFIED · level ${r.level} · band ${r.band}`;
-    return `VERIFIED · level ${r.level}`;
+    // "Tested (silver)": the name people read, then the wire value scripts match on.
+    const level = `${levelName(r.level) ?? r.level} (${r.level})`;
+    if ((r.level === "banded" || r.level === "scanned") && r.band) return `VERIFIED · ${level} · band ${r.band}`;
+    return `VERIFIED · ${level}`;
   }
   const hard = r.notes.some((n) => n.startsWith("source mismatch:") || n.startsWith("publishers differ:"));
   if (r.policyStatus === "custom" && !hard) return "custom policy, not baseline";

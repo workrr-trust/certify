@@ -21,13 +21,13 @@ Usage:
   workrr test    <path> [--out tests.json]
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
-                        [--observe https://github.com/<owner>/<repo>]
-  workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
+                        [--observe https://github.com/<owner>/<repo> [--finding-out finding.json]]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
                         [--source <repo>] [--offline] [--private] [--json]
                         [--trusted-root trusted_root.json] [--anchor-receipt receipt.json]
+  workrr verify-finding <path> --bundle <file> [--trust-policy policy.json] [--json]
   workrr anchor  <path> --bundle <file> [--out anchor-request.json]
-  workrr gate    <repo-dir> [--min-level scanned|banded|silver|gold] [--policy policy.json]
+  workrr gate    <repo-dir> [--min-level scanned|signed|tested|reproduced] [--policy policy.json]
                             [--certificates-dir <dir>] [--source <repo>] [--json]
 
   test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
@@ -35,7 +35,9 @@ Usage:
   certify  Runs provenance, policy and scan checks; exits 1 if any check fails.
            In GitHub Actions also writes subject-name / subject-digest outputs.
            --observe makes a public scan (level scanned) of that repository's
-           checkout: tests never run (docs/public-scans.md).
+           checkout: tests never run (docs/public-scans.md). With
+           --finding-out, a scan that fails a security check writes a finding
+           statement to sign instead (docs/findings.md).
   verify   Checks the artifact digest, Sigstore signature, Rekor inclusion,
            certifier identity, and revocation. Reports the policy name and digest.
            A policy that is not the baseline does not verify at a baseline level.
@@ -52,6 +54,12 @@ Usage:
            {version, signers} file is a local override and its signature is not checked.
            --private accepts private-tier TSA attestations and optional hash-only
            anchor receipts (--anchor-receipt).
+  verify-finding
+           Verifies a signed finding from a public scan (signature, Rekor,
+           observer signer), then reproduces it: re-runs the checks on <path>
+           (a checkout of the commit it names) and requires the same failures.
+  Levels, least to most scrutiny: Scanned, Signed, Tested, Reproduced (wire
+  values scanned, banded, silver, gold). Either name works for --min-level.
   anchor   Computes the hash-only public anchor request payload for a private bundle.
   gate     Org policy gate: discovers all skills in <repo-dir> and exits 1 if
            any skill is uncertified, fails policy/scan, or is below --min-level.
@@ -66,7 +74,7 @@ type args struct {
 
 var observeRe = regexp.MustCompile(`^https://github\.com/[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$`)
 
-var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "anchor-receipt": true, "min-level": true, "certificates-dir": true, "source": true, "observe": true}
+var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "anchor-receipt": true, "min-level": true, "certificates-dir": true, "source": true, "observe": true, "finding-out": true}
 var boolOpts = map[string]bool{"run-tests": true, "private": true, "json": true, "offline": true}
 
 // parseArgs follows node:util parseArgs in strict mode: --name value,
@@ -110,6 +118,17 @@ func parseArgs(argv []string) (*args, error) {
 		}
 	}
 	return a, nil
+}
+
+func findingLine(f certify.FindingItem) string {
+	s := f.Detail
+	if f.File != "" {
+		s += " " + f.File
+		if f.Line > 0 {
+			s += fmt.Sprintf(":%d", f.Line)
+		}
+	}
+	return s
 }
 
 func prettyJSON(v any) []byte {
@@ -182,6 +201,9 @@ func run(argv []string) (int, error) {
 				return 0, err
 			}
 		}
+		if a.strings["finding-out"] != "" && a.strings["observe"] == "" {
+			return 0, fmt.Errorf("--finding-out needs --observe")
+		}
 		if o := a.strings["observe"]; o != "" {
 			if !observeRe.MatchString(o) {
 				return 0, fmt.Errorf("--observe must be https://github.com/<owner>/<repo>")
@@ -221,9 +243,9 @@ func run(argv []string) (int, error) {
 		if len(commit) > 12 {
 			commit = commit[:12]
 		}
-		last := "level      " + p.Level
+		last := "level      " + certify.LevelName(p.Level) + " (" + p.Level + ")"
 		if p.Band != "" {
-			last += " (band " + p.Band + ")"
+			last += ", band " + p.Band
 		}
 		if !outcome.Certified {
 			last = "NOT CERTIFIED:\n  - " + strings.Join(outcome.Failures, "\n  - ")
@@ -254,13 +276,30 @@ func run(argv []string) (int, error) {
 				return 0, err
 			}
 		}
+		var finding *certify.FindingStatement
+		if out := a.strings["finding-out"]; out != "" {
+			if finding = certify.NewFindingStatement(outcome); finding != nil {
+				if err := os.WriteFile(out, prettyJSON(finding.Predicate), 0o644); err != nil {
+					return 0, err
+				}
+				var parts []string
+				for _, f := range finding.Predicate.Findings {
+					parts = append(parts, findingLine(f))
+				}
+				fmt.Fprintf(os.Stderr, "finding    %s: %s\n", finding.Predicate.Kind, strings.Join(parts, "; "))
+			}
+		}
 		if gh := os.Getenv("GITHUB_OUTPUT"); gh != "" {
 			f, err := os.OpenFile(gh, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
 				return 0, err
 			}
-			_, err = fmt.Fprintf(f, "certified=%t\nsubject-name=%s\nsubject-digest=sha256:%s\nlevel=%s\nband=%s\n",
-				outcome.Certified, st.Subject[0].Name, st.Subject[0].Digest["sha256"], p.Level, p.Band)
+			kind := ""
+			if finding != nil {
+				kind = finding.Predicate.Kind
+			}
+			_, err = fmt.Fprintf(f, "finding=%s\ncertified=%t\nsubject-name=%s\nsubject-digest=sha256:%s\nlevel=%s\nband=%s\n",
+				kind, outcome.Certified, st.Subject[0].Name, st.Subject[0].Digest["sha256"], p.Level, p.Band)
 			f.Close()
 			if err != nil {
 				return 0, err
@@ -392,12 +431,11 @@ func run(argv []string) (int, error) {
 		return 1, nil
 
 	case "gate":
-		minLevel := a.strings["min-level"]
-		if minLevel == "" {
-			minLevel = "silver"
-		}
-		if minLevel != "scanned" && minLevel != "banded" && minLevel != "silver" && minLevel != "gold" {
-			return 0, fmt.Errorf("--min-level must be scanned, banded, silver, or gold")
+		minLevel := "silver"
+		if m := a.strings["min-level"]; m != "" {
+			if minLevel = certify.ParseLevel(m); minLevel == "" {
+				return 0, fmt.Errorf("--min-level must be scanned, signed, tested, or reproduced")
+			}
 		}
 		reqPolicy := certify.BaselinePolicy()
 		if p := a.strings["policy"]; p != "" {
@@ -440,7 +478,7 @@ func run(argv []string) (int, error) {
 			fmt.Printf("org gate: %d/%d skill(s) pass (required: %s, policy: %s)\n", res.PassedSkills, res.TotalSkills, res.MinLevel, res.RequiredPolicyName)
 			for _, s := range res.Skills {
 				if s.OK {
-					fmt.Printf("  ✓ %s (%s) — level %s\n", s.Path, s.Name, s.Level)
+					fmt.Printf("  ✓ %s (%s) — %s (%s)\n", s.Path, s.Name, certify.LevelName(s.Level), s.Level)
 				} else {
 					fmt.Printf("  ✗ %s (%s) — %s\n", s.Path, s.Name, strings.Join(s.Reasons, "; "))
 				}
@@ -452,6 +490,48 @@ func run(argv []string) (int, error) {
 			}
 		}
 		if res.OK {
+			return 0, nil
+		}
+		return 1, nil
+
+	case "verify-finding":
+		if len(a.bundles) != 1 {
+			return 0, fmt.Errorf("verify-finding needs exactly one --bundle")
+		}
+		loaded, err := certify.LoadTrustPolicy(certify.LoadOptions{
+			Offline: a.bools["offline"], File: a.strings["trust-policy"], TrustedRoot: a.strings["trusted-root"],
+		})
+		if err != nil {
+			return 0, err
+		}
+		if loaded.Status != "ok" {
+			return 0, fmt.Errorf("trust policy: %s %s", loaded.Status, strings.Join(loaded.Warnings, "; "))
+		}
+		r, err := certify.VerifyFinding(path, a.bundles[0], &loaded.Policy, &certify.TrustedMaterialSource{Path: a.strings["trusted-root"]})
+		if err != nil {
+			return 0, err
+		}
+		if a.bools["json"] {
+			os.Stdout.Write(prettyJSON(r))
+		} else {
+			fmt.Printf("artifact sha256:%s\n", r.ArtifactDigest)
+			if r.Source != "" {
+				commit := r.Commit
+				if len(commit) > 12 {
+					commit = commit[:12]
+				}
+				fmt.Printf("  source %s@%s %s\n", r.Source, commit, r.Path)
+			}
+			for _, f := range r.Findings {
+				fmt.Printf("  %s\n", findingLine(f))
+			}
+			if r.OK {
+				fmt.Printf("FINDING REPRODUCED · %s\n", r.Kind)
+			} else {
+				fmt.Printf("NOT REPRODUCED: %s\n", r.Error)
+			}
+		}
+		if r.OK {
 			return 0, nil
 		}
 		return 1, nil

@@ -24,30 +24,39 @@ test("v0.1.3 needs its pinned tag digest", () => {
   assert.equal(match("refs/tags/v0.1.3", "46c524bf97e8f580375edff746c847b86f4b23f9"), undefined);
 });
 
+test("v0.1.4 needs its pinned tag digest", () => {
+  assert.ok(match("refs/tags/v0.1.4", "54b6c3a8f7818d1c8edba145edbf2157c35208d9"));
+  assert.equal(match("refs/tags/v0.1.4", "14466afa6a8bc8612292b74ae63e764590041031"), undefined);
+});
+
 test("the newest release is accepted by its exact tag", () => {
-  assert.ok(match("refs/tags/v0.1.4", "1234567890123456789012345678901234567890"));
+  assert.ok(match("refs/tags/v0.1.5", "1234567890123456789012345678901234567890"));
 });
 
 test("unlisted, look-alike and branch refs are rejected", () => {
-  for (const ref of ["refs/tags/v0.1.5", "refs/tags/v0.1.4x", "refs/tags/v0.1.4-rc1", "refs/heads/v0.1.4", "refs/heads/main"]) {
+  for (const ref of ["refs/tags/v0.1.6", "refs/tags/v0.1.5x", "refs/tags/v0.1.5-rc1", "refs/heads/v0.1.5", "refs/heads/main"]) {
     assert.equal(match(ref, "78d8c1a98c929b7b1c1b532c25256582a84887b1"), undefined, ref);
   }
 });
 
 test("the GitLab identity is not trusted at the newest release", () => {
-  const gl = { san: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.4", issuer: "https://gitlab.com", buildSignerDigest: "1234567890123456789012345678901234567890" };
+  const gl = { san: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.5", issuer: "https://gitlab.com", buildSignerDigest: "1234567890123456789012345678901234567890" };
   assert.equal(matchDescribedSigner(DEFAULT_TRUST_POLICY, gl), undefined);
 });
 
 // Public scans (docs/public-scans.md).
 const scanSan = (ref) => `https://github.com/workrr-trust/certify/.github/workflows/scan.yml@${ref}`;
-const scanMatch = (ref) =>
-  matchDescribedSigner(DEFAULT_TRUST_POLICY, { san: scanSan(ref), issuer, buildSignerDigest: "1234567890123456789012345678901234567890" });
+const scanMatch = (ref, buildSignerDigest = "1234567890123456789012345678901234567890") =>
+  matchDescribedSigner(DEFAULT_TRUST_POLICY, { san: scanSan(ref), issuer, buildSignerDigest });
 
-test("scan.yml is an observer signer at the newest release only", () => {
-  assert.equal(scanMatch("refs/tags/v0.1.4")?.role, "observer");
-  for (const ref of ["refs/tags/v0.1.3", "refs/heads/main", "refs/tags/v0.1.4-rc1"]) assert.equal(scanMatch(ref), undefined, ref);
-  assert.equal(match("refs/tags/v0.1.4", "1234567890123456789012345678901234567890")?.role, undefined);
+test("scan.yml is an observer signer: v0.1.4 by its commit, the newest by tag", () => {
+  assert.equal(scanMatch("refs/tags/v0.1.5")?.role, "observer");
+  // Dispatched directly, so Fulcio records the tagged commit, not the tag object.
+  assert.equal(scanMatch("refs/tags/v0.1.4", "14466afa6a8bc8612292b74ae63e764590041031")?.role, "observer");
+  assert.equal(scanMatch("refs/tags/v0.1.4"), undefined);
+  assert.equal(scanMatch("refs/tags/v0.1.4", "54b6c3a8f7818d1c8edba145edbf2157c35208d9"), undefined);
+  for (const ref of ["refs/tags/v0.1.3", "refs/heads/main", "refs/tags/v0.1.5-rc1"]) assert.equal(scanMatch(ref), undefined, ref);
+  assert.equal(match("refs/tags/v0.1.5", "1234567890123456789012345678901234567890")?.role, undefined);
 });
 
 const scanned = (over = {}) => ({

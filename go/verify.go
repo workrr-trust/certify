@@ -293,10 +293,15 @@ func worstStatus(statuses []string) string {
 // baseline level unless the gate accepted the policy.
 func VerificationHeadline(ok bool, level, policyStatus string, notes []string, band ...string) string {
 	if ok && level != "" {
-		if (level == "banded" || level == "scanned") && len(band) > 0 && band[0] != "" {
-			return "VERIFIED · level " + level + " · band " + band[0]
+		// "Tested (silver)": the name people read, then the wire value scripts match on.
+		named := level
+		if n := LevelName(level); n != "" {
+			named = n + " (" + level + ")"
 		}
-		return "VERIFIED · level " + level
+		if (level == "banded" || level == "scanned") && len(band) > 0 && band[0] != "" {
+			return "VERIFIED · " + named + " · band " + band[0]
+		}
+		return "VERIFIED · " + named
 	}
 	hard := false
 	for _, n := range notes {

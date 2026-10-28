@@ -75,12 +75,16 @@ implementation must pass them.
 
 ## 4. Level
 
+Display names say how much scrutiny each level means: **Scanned** (`scanned`),
+**Signed** (`banded`), **Tested** (`silver`), **Reproduced** (`gold`). The wire values
+below are what certificates carry.
+
 | Level | Rule |
 |---|---|
 | `silver` | provenance, policy, scan, and tests all `pass` |
 | `banded` | provenance, policy, scan `pass`; tests `none` (not deterministically testable). Receives a deterministic `A`–`E` trust band (`predicate.band`). |
 | `scanned` | a **public scan** ([docs/public-scans.md](../docs/public-scans.md)): an *observer* certifier run by workrr in its own repository read a public commit. Provenance, policy, scan `pass`; tests always `none` (a scan never runs the project's code). Not signed by the maintainer. Carries the same `A`–`E` band as `banded`. Ranks below `banded`. |
-| *(no certificate)* | any check `fail` — the certifier exits non-zero and nothing is signed |
+| *(no certificate)* | any check `fail` — the certifier exits non-zero and nothing is signed as a certificate. A public scan that fails a security check signs a **finding** instead (§8). |
 | `gold` | **Assigned only by verifiers, never by certifiers:** two `silver` certificates for the same digest, signed by accepted certifier identities on two different forges, with identical `checks`. |
 
 **Trust bands (`A`–`E`).** When `level` is `banded`, the certifier computes a deterministic
@@ -265,6 +269,23 @@ is verified.
 
 The host (`https://trust-api.workrr.ai`, or `WORKRR_TRUST_API`) is transport.
 Replacing it changes availability, not who can sign.
+
+## 8. Findings
+
+A public scan that fails a high or critical scan rule, or the policy's forbidden
+file type or escaping symlink rules, signs an in-toto Statement with predicate type
+`https://trust.workrr.ai/finding/v0.1`. Its predicate carries `artifact`, `source`
+and `checks` as in §3 (tests always `none`), plus `kind` (`concealment` when any
+failing rule is WT002, WT003, WT007 or WT008; otherwise `check`), `findings` (one
+item per failure: `check`, `rule`, `severity`, `file`, `line` where applicable,
+`detail`), `certifier` and `scannedAt`.
+
+A finding is valid only from an **observer** signer whose Fulcio source repository
+is `workrr-trust/certify`. To accept one, a verifier checks the signature and Rekor
+inclusion as in §6, then reproduces it: it runs the same checks on the named commit
+and requires identical `findings` and `kind` under the same ruleset and policy
+digests. Certificate verifiers reject this predicate type. Format and policy:
+[docs/findings.md](../docs/findings.md).
 
 ## Versioning
 
