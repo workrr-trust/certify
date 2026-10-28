@@ -277,11 +277,11 @@ func parseSignerTree(v any) (AcceptedSigner, bool) {
 	role := ""
 	if r, present := m["role"]; present {
 		rs, _ := r.(string)
-		if rs != "publisher" && rs != RoleObserver {
+		if rs != "publisher" && rs != RoleObserver && rs != RoleWitness {
 			return AcceptedSigner{}, false
 		}
-		if rs == RoleObserver {
-			role = RoleObserver
+		if rs != "publisher" {
+			role = rs
 		}
 	}
 	return AcceptedSigner{Forge: Forge(forge), Issuer: issuer, SubjectAlternativeName: san, BuildSignerDigests: digests, Role: role}, true
@@ -317,11 +317,21 @@ func parseTrustPolicy(payload string) (*TrustPolicyDocument, error) {
 	}
 	signers := make([]AcceptedSigner, 0, len(rawSigners))
 	for _, s := range rawSigners {
+		// A signer whose role this release doesn't know is skipped, not trusted: a
+		// newer policy can add roles without making older verifiers reject it.
+		if sm, ok := asMap(s); ok {
+			if r, ok := sm["role"].(string); ok && r != "publisher" && r != RoleObserver && r != RoleWitness {
+				continue
+			}
+		}
 		signer, ok := parseSignerTree(s)
 		if !ok {
 			return nil, fmt.Errorf("malformed trust policy")
 		}
 		signers = append(signers, signer)
+	}
+	if len(signers) == 0 {
+		return nil, fmt.Errorf("malformed trust policy")
 	}
 	rawDigests, ok := asMap(m["baselinePolicyDigests"])
 	if !ok {

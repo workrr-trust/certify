@@ -216,13 +216,15 @@ export function parseSignedBlob(value: unknown): SignedBlob | undefined {
   return value as SignedBlob;
 }
 
+const KNOWN_ROLES = new Set(["publisher", "observer", "witness"]);
+
 function parseSigner(v: unknown): AcceptedSigner | undefined {
   if (!isRecord(v)) return undefined;
   if (v.forge !== "github" && v.forge !== "gitlab") return undefined;
   if (typeof v.issuer !== "string" || !v.issuer.startsWith("https://")) return undefined;
   if (typeof v.subjectAlternativeName !== "string" || v.subjectAlternativeName.length === 0) return undefined;
   if (!Array.isArray(v.buildSignerDigests)) return undefined;
-  if (v.role !== undefined && v.role !== "publisher" && v.role !== "observer") return undefined;
+  if (v.role !== undefined && v.role !== "publisher" && v.role !== "observer" && v.role !== "witness") return undefined;
   const digests: string[] = [];
   for (const d of v.buildSignerDigests) {
     if (typeof d !== "string" || !GIT_SHA.test(d)) return undefined;
@@ -233,7 +235,7 @@ function parseSigner(v: unknown): AcceptedSigner | undefined {
     issuer: v.issuer,
     subjectAlternativeName: v.subjectAlternativeName,
     buildSignerDigests: digests,
-    ...(v.role === "observer" ? { role: "observer" as const } : {}),
+    ...(v.role === "observer" || v.role === "witness" ? { role: v.role } : {}),
   };
 }
 
@@ -252,10 +254,14 @@ export function parseTrustPolicy(payload: string): TrustPolicyDocument | { ok: f
   if (!Array.isArray(parsed.signers) || parsed.signers.length === 0) return fail("malformed trust policy");
   const signers: AcceptedSigner[] = [];
   for (const s of parsed.signers) {
+    // A signer whose role this release doesn't know is skipped, not trusted: a newer
+    // policy can add roles without making older verifiers reject the whole policy.
+    if (isRecord(s) && typeof s.role === "string" && !KNOWN_ROLES.has(s.role)) continue;
     const signer = parseSigner(s);
     if (!signer) return fail("malformed trust policy");
     signers.push(signer);
   }
+  if (signers.length === 0) return fail("malformed trust policy");
   if (!isRecord(parsed.baselinePolicyDigests)) return fail("malformed trust policy");
   const baselinePolicyDigests: Record<string, string> = {};
   for (const [name, digest] of Object.entries(parsed.baselinePolicyDigests)) {

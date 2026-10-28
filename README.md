@@ -117,8 +117,8 @@ dispatched, not called, so Fulcio records the tagged commit for it, and older
 releases of it are pinned to that commit (`14466afa…` for `v0.1.4`).
 
 The action also has no input that replaces the trust policy. The signer set is
-the built-in policy in the commit you pin. `level: gold` fails closed today:
-the built-in policy has no second forge.
+the built-in policy in the commit you pin. `level: gold` needs the GitLab
+witness certificate next to the publisher's (see Verify).
 
 Publishers: [`docs/quickstart.md`](docs/quickstart.md). Consumers:
 
@@ -226,8 +226,10 @@ inclusion, that the signer is a released workrr certifier tag pinned in the trus
 policy, and that the certificate is not revoked. The output names the publisher
 repository and the policy name and digest. Silver, gold, and banded are reported
 only when that digest is the known baseline. `--source <repo>` fails when the
-certificate's publisher does not match. The default trust policy has no second
-forge, so it does not award **Gold**.
+certificate's publisher does not match. **Gold** (Reproduced) needs a second
+bundle from the GitLab witness ([`docs/gitlab-certifier.md`](docs/gitlab-certifier.md)):
+pass both `--bundle` files, and the publisher's Tested certificate and the
+witness must name the same repository, commit, path and checks.
 
 `verify` fetches the signed trust policy from the trust API (cached for one hour)
 and the revocation feed on every run. `--offline` uses the policy embedded in this
@@ -274,5 +276,6 @@ npm test
 - Workflow actions are pinned by commit SHA.
 - Private repos sign with GitHub's private Sigstore instance (no public Rekor entry). The
   private tier uses its own trust root and the hash-only public log design.
-- There is no GitLab certifier in the trust set, so the default policy does not award
-  Gold.
+- Gold's second forge is the GitLab witness, which workrr runs in
+  `gitlab.com/workrr-trust/certify-gitlab`. A publisher's own GitLab CI can't be
+  a signer yet (GitLab can't sign from an included CI file).

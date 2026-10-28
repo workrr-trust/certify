@@ -371,9 +371,9 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v011) == nil {
 		t.Fatal("rejected the pinned v0.1.1 tag")
 	}
-	gl := &Signer{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.0", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010}
-	if s := MatchSigner(&DefaultTrustPolicy, gl); s == nil || s.Forge != ForgeGitLab {
-		t.Fatalf("expected gitlab signer, got %+v", s)
+	gl := &Signer{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.7", Issuer: "https://gitlab.com", BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	if s := MatchSigner(&DefaultTrustPolicy, gl); s == nil || s.Forge != ForgeGitLab || s.Role != RoleWitness {
+		t.Fatalf("expected gitlab witness, got %+v", s)
 	}
 	for _, bad := range []*Signer{
 		{SAN: gh.SAN + "x", Issuer: gh.Issuer, BuildSignerDigest: tagV010},
@@ -384,7 +384,11 @@ func TestMatchSigner(t *testing.T) {
 		// Peeled commit, not the annotated tag object Fulcio records.
 		{SAN: gh.SAN, Issuer: gh.Issuer, BuildSignerDigest: "edf382958dd7ce070db0ed13af1cc8c31a150901"},
 		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/heads/main", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
-		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.0", Issuer: "https://gitlab.com", BuildSignerDigest: "edf382958dd7ce070db0ed13af1cc8c31a150901"},
+		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.0", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
+		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.6", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
+		{SAN: "https://gitlab.com/workrr-trust/ledger//mirror/gitlab-ci.yml@refs/tags/v0.1.7", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
+		{SAN: "https://gitlab.com/someone/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.7", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
+		{SAN: gl.SAN, Issuer: gh.Issuer, BuildSignerDigest: tagV010},
 	} {
 		if s := MatchSigner(&DefaultTrustPolicy, bad); s != nil {
 			t.Errorf("accepted %+v", bad)
@@ -392,9 +396,17 @@ func TestMatchSigner(t *testing.T) {
 	}
 	// The newest release is accepted by its exact tag with any digest; later or
 	// look-alike tags are not.
-	v016 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.6", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
-	if s := MatchSigner(&DefaultTrustPolicy, v016); s == nil || s.Role != "" {
-		t.Errorf("newest release tag v0.1.6: got %+v", s)
+	v017 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.7", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	if s := MatchSigner(&DefaultTrustPolicy, v017); s == nil || s.Role != "" {
+		t.Errorf("newest release tag v0.1.7: got %+v", s)
+	}
+	v016 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.6", Issuer: gh.Issuer, BuildSignerDigest: "90f9138d6ed5e55981ad1dbb90b5a2345f420b0e"}
+	if MatchSigner(&DefaultTrustPolicy, v016) == nil {
+		t.Error("rejected v0.1.6 at its pinned tag digest")
+	}
+	v016.BuildSignerDigest = "a6aaa8f664d87f7dc2b8becb6382b29c15763025"
+	if MatchSigner(&DefaultTrustPolicy, v016) != nil {
+		t.Error("accepted certify.yml@v0.1.6 at the peeled commit")
 	}
 	v015 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.5", Issuer: gh.Issuer, BuildSignerDigest: "ab877ee7bc33604f1d1b95d7e1377f340fd5d476"}
 	if MatchSigner(&DefaultTrustPolicy, v015) == nil {
@@ -420,9 +432,9 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v013) != nil {
 		t.Error("accepted v0.1.3 at the peeled commit")
 	}
-	scan := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.6", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	scan := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.7", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
 	if s := MatchSigner(&DefaultTrustPolicy, scan); s == nil || s.Role != RoleObserver {
-		t.Errorf("scan.yml@v0.1.6 should be an observer, got %+v", s)
+		t.Errorf("scan.yml@v0.1.7 should be an observer, got %+v", s)
 	}
 	scan15 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.5", Issuer: gh.Issuer, BuildSignerDigest: "5fb6a6635f5cee1f8fe51cfa27fa997298d2faf3"}
 	if s := MatchSigner(&DefaultTrustPolicy, scan15); s == nil || s.Role != RoleObserver {
@@ -453,7 +465,7 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v012) != nil {
 		t.Error("accepted v0.1.2 at the peeled commit")
 	}
-	for _, ref := range []string{"refs/tags/v0.1.7", "refs/tags/v0.1.6x", "refs/tags/v0.1.6-rc1", "refs/heads/v0.1.6"} {
+	for _, ref := range []string{"refs/tags/v0.1.8", "refs/tags/v0.1.7x", "refs/tags/v0.1.7-rc1", "refs/heads/v0.1.7"} {
 		s := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@" + ref, Issuer: gh.Issuer, BuildSignerDigest: tagV010}
 		if MatchSigner(&DefaultTrustPolicy, s) != nil {
 			t.Errorf("accepted %s", ref)
@@ -791,6 +803,63 @@ func TestScannedNeverAddsToPublisherLevel(t *testing.T) {
 	}
 	if !LevelMeetsMinimum("scanned", "scanned") || LevelMeetsMinimum("scanned", "banded") {
 		t.Error("scanned ranks below banded")
+	}
+}
+
+func TestWitnessMakesGold(t *testing.T) {
+	src := func(uri string) map[string]any {
+		st := scannedStatement("silver", "pass")
+		st["predicate"].(map[string]any)["source"] = map[string]any{"uri": uri, "commit": strings.Repeat("a", 40), "path": "skills/s"}
+		return st
+	}
+	gh := BundleResult{OK: true, Forge: ForgeGitHub, Statement: src("https://github.com/someone/skills")}
+	witness := BundleResult{OK: true, Forge: ForgeGitLab, Witness: true, Statement: src("https://github.com/someone/skills")}
+	if lvl, notes := EvaluateGoldBundles([]BundleResult{gh, witness}, nil); lvl != "gold" {
+		t.Errorf("publisher + witness: %q (%v)", lvl, notes)
+	}
+	if lvl, _ := EvaluateGoldBundles([]BundleResult{witness}, nil); lvl != "scanned" {
+		t.Errorf("witness alone: %q", lvl)
+	}
+	older := gh
+	olderStatement := scannedStatement("silver", "pass")
+	olderStatement["predicate"].(map[string]any)["source"] = map[string]any{"uri": "https://github.com/someone/skills", "commit": strings.Repeat("b", 40), "path": "skills/s"}
+	older.Statement = olderStatement
+	if lvl, notes := EvaluateGoldBundles([]BundleResult{older, witness, gh}, nil); lvl != "gold" {
+		t.Errorf("older commit first: %q (%v)", lvl, notes)
+	}
+	other := witness
+	other.Statement = src("https://github.com/other/skills")
+	if lvl, _ := EvaluateGoldBundles([]BundleResult{gh, other}, nil); lvl != "silver" {
+		t.Errorf("witness of another repo: %q", lvl)
+	}
+	sameForge := witness
+	sameForge.Forge = ForgeGitHub
+	if lvl, _ := EvaluateGoldBundles([]BundleResult{gh, sameForge}, nil); lvl != "silver" {
+		t.Errorf("two GitHub certificates: %q", lvl)
+	}
+	banded := BundleResult{OK: true, Forge: ForgeGitHub, Statement: scannedStatement("banded", "none")}
+	if lvl, _ := EvaluateGoldBundles([]BundleResult{banded, witness}, nil); lvl != "banded" {
+		t.Errorf("banded + witness: %q", lvl)
+	}
+
+	repo := &Signer{SourceRepositoryURI: "https://gitlab.com/workrr-trust/certify-gitlab"}
+	if msg := CheckWitnessSigner(scannedStatement("silver", "pass"), repo); msg != "" {
+		t.Errorf("valid witness rejected: %s", msg)
+	}
+	short := scannedStatement("silver", "pass")
+	short["predicate"].(map[string]any)["source"] = map[string]any{"uri": "https://github.com/someone/skills", "commit": "main", "path": "skills/s"}
+	for name, c := range map[string]struct {
+		st     map[string]any
+		signer *Signer
+	}{
+		"outside repo": {scannedStatement("silver", "pass"), &Signer{SourceRepositoryURI: "https://gitlab.com/someone/certify-gitlab"}},
+		"no repo":      {scannedStatement("silver", "pass"), &Signer{}},
+		"gold claim":   {scannedStatement("gold", "pass"), repo},
+		"short commit": {short, repo},
+	} {
+		if CheckWitnessSigner(c.st, c.signer) == "" {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }
 

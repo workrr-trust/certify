@@ -17,13 +17,19 @@ export type AcceptedSigner = {
   // "publisher" (the default): the signer runs in the artifact's own repo, and Fulcio's
   // source repo must match the certificate's source. "observer": a public scan run in
   // OBSERVER_REPOSITORY; it reports level "scanned" only (docs/public-scans.md).
+  // "witness": the GitLab certifier run in WITNESS_REPOSITORY against a public commit;
+  // alone it reports "scanned", and it makes a publisher's Tested certificate
+  // Reproduced (gold) when both agree (docs/gitlab-certifier.md).
   role?: SignerRole;
 };
 
-export type SignerRole = "publisher" | "observer";
+export type SignerRole = "publisher" | "observer" | "witness";
 
 // The only repository an observer signer may run in (Fulcio's SourceRepositoryURI).
 export const OBSERVER_REPOSITORY = "https://github.com/workrr-trust/certify";
+
+// The only repository a witness signer may run in: GitLab's copy of this repository.
+export const WITNESS_REPOSITORY = "https://gitlab.com/workrr-trust/certify-gitlab";
 
 export type TrustPolicy = { version: string; signers: AcceptedSigner[] };
 
@@ -42,9 +48,12 @@ export type TrustPolicy = { version: string; signers: AcceptedSigner[] };
 //          commit 14466afa6a8bc8612292b74ae63e764590041031
 //   v0.1.5 tag ab877ee7bc33604f1d1b95d7e1377f340fd5d476
 //          commit 5fb6a6635f5cee1f8fe51cfa27fa997298d2faf3
+//   v0.1.6 tag 90f9138d6ed5e55981ad1dbb90b5a2345f420b0e
+//          commit a6aaa8f664d87f7dc2b8becb6382b29c15763025
 //
 // scan.yml is dispatched directly (workflow_dispatch), not called, so for it Fulcio
 // records the tagged COMMIT, not the tag object: scan.yml@v0.1.4 is 14466afa….
+// GitLab's ci_config_sha is the tagged commit too.
 //
 // A release can't list its own digest: the tag object names the commit that would
 // contain it. So the newest release is accepted by its exact tag name alone, and the
@@ -53,7 +62,7 @@ export type TrustPolicy = { version: string; signers: AcceptedSigner[] };
 // identity-watch alerts if a released tag ever moves.
 const CERTIFY_SAN = String.raw`https://github\.com/workrr-trust/certify/\.github/workflows/certify\.yml@refs/tags/`;
 const SCAN_SAN = String.raw`https://github\.com/workrr-trust/certify/\.github/workflows/scan\.yml@refs/tags/`;
-const GITLAB_CERTIFY_SAN = String.raw`https://gitlab\.com/workrr-trust/(?:certify(?:-gitlab)?//?\.gitlab-ci\.yml|ledger//?mirror/gitlab-ci\.yml)@refs/tags/`;
+const WITNESS_SAN = String.raw`https://gitlab\.com/workrr-trust/certify-gitlab//\.gitlab-ci\.yml@refs/tags/`;
 
 export const DEFAULT_TRUST_POLICY: TrustPolicy = {
   version: "workrr-trust-policy-v0.1",
@@ -95,10 +104,16 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
       buildSignerDigests: ["ab877ee7bc33604f1d1b95d7e1377f340fd5d476"],
     },
     {
-      // NEWEST: this release, by exact tag; v0.1.7 pins its digest.
       forge: "github",
       issuer: "https://token.actions.githubusercontent.com",
       subjectAlternativeName: `^${CERTIFY_SAN}v0\\.1\\.6$`,
+      buildSignerDigests: ["90f9138d6ed5e55981ad1dbb90b5a2345f420b0e"],
+    },
+    {
+      // NEWEST: this release, by exact tag; v0.1.8 pins its digest.
+      forge: "github",
+      issuer: "https://token.actions.githubusercontent.com",
+      subjectAlternativeName: `^${CERTIFY_SAN}v0\\.1\\.7$`,
       buildSignerDigests: [],
     },
     {
@@ -118,24 +133,28 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
       role: "observer",
     },
     {
-      // Public scans and signed findings. NEWEST, by exact tag; v0.1.7 pins its commit.
       forge: "github",
       issuer: "https://token.actions.githubusercontent.com",
       subjectAlternativeName: `^${SCAN_SAN}v0\\.1\\.6$`,
+      buildSignerDigests: ["a6aaa8f664d87f7dc2b8becb6382b29c15763025"],
+      role: "observer",
+    },
+    {
+      // Public scans and signed findings. NEWEST, by exact tag; v0.1.8 pins its commit.
+      forge: "github",
+      issuer: "https://token.actions.githubusercontent.com",
+      subjectAlternativeName: `^${SCAN_SAN}v0\\.1\\.7$`,
       buildSignerDigests: [],
       role: "observer",
     },
     {
+      // GitLab witness (.gitlab-ci.yml run in WITNESS_REPOSITORY). NEWEST, by exact
+      // tag; v0.1.8 pins its commit. GitLab protects v* tags in that project too.
       forge: "gitlab",
       issuer: "https://gitlab.com",
-      subjectAlternativeName: `^${GITLAB_CERTIFY_SAN}v0\\.1\\.0$`,
-      buildSignerDigests: ["9fbe3e453cbd80bef0301f08db79408bb12c7d64"],
-    },
-    {
-      forge: "gitlab",
-      issuer: "https://gitlab.com",
-      subjectAlternativeName: `^${GITLAB_CERTIFY_SAN}v0\\.1\\.1$`,
-      buildSignerDigests: ["78d8c1a98c929b7b1c1b532c25256582a84887b1"],
+      subjectAlternativeName: `^${WITNESS_SAN}v0\\.1\\.7$`,
+      buildSignerDigests: [],
+      role: "witness",
     },
   ],
 };

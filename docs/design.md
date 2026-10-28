@@ -89,8 +89,10 @@ The authority is **a policy, not a server**.
     `ci_config_ref_uri`) is therefore the **project running the pipeline**, not a
     shared component. The intended design is a dedicated public
     `workrr-trust/certify-gitlab` project whose top-level `.gitlab-ci.yml` is the
-    certifier, pinned by the trust policy to project + ref + commit. That project
-    does not exist, and the v0.1.2 built-in policy does not list it.
+    certifier, pinned by the trust policy to project + ref + commit. Since v0.1.7
+    that project is the **GitLab witness** (`docs/gitlab-certifier.md`): it
+    certifies a public GitHub commit, and counts only toward Gold next to the
+    publisher's own GitHub certificate.
 - **Marketplace action is verify-only.** GitHub Marketplace lists a root
   `action.yml`. A composite action runs inside the caller's job, so a
   certificate it signed would carry the caller's `job_workflow_ref`, not

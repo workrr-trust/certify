@@ -23,6 +23,7 @@ Usage:
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
                         [--observe https://github.com/<owner>/<repo> [--finding-out finding.json]]
+                        [--witness https://github.com/<owner>/<repo>]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
                         [--source <repo>] [--offline] [--private] [--json]
                         [--trusted-root trusted_root.json] [--anchor-receipt receipt.json]
@@ -39,6 +40,9 @@ Usage:
            checkout: tests never run (docs/public-scans.md). With
            --finding-out, a scan that fails a security check writes a finding
            statement to sign instead (docs/findings.md).
+           --witness names that repository as the source of a checkout made
+           elsewhere (the GitLab witness, docs/gitlab-certifier.md); tests
+           still count.
   verify   Checks the artifact digest, Sigstore signature, Rekor inclusion,
            certifier identity, and revocation. Reports the policy name and digest.
            A policy that is not the baseline does not verify at a baseline level.
@@ -89,6 +93,7 @@ async function main(argv: string[]): Promise<number> {
       "tests-report": { type: "string" },
       "run-tests": { type: "boolean" },
       observe: { type: "string" },
+      witness: { type: "string" },
       "finding-out": { type: "string" },
       "statement-out": { type: "string" },
       "predicate-out": { type: "string" },
@@ -130,10 +135,15 @@ async function main(argv: string[]): Promise<number> {
         throw new Error("--observe must be https://github.com/<owner>/<repo>");
       }
       if (values["finding-out"] && observe === undefined) throw new Error("--finding-out needs --observe");
+      const witness = values.witness;
+      if (witness !== undefined && !/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/.test(witness)) {
+        throw new Error("--witness must be https://github.com/<owner>/<repo>");
+      }
+      if (witness !== undefined && observe !== undefined) throw new Error("use --observe or --witness, not both");
       if (observe !== undefined && (testsReport || values["run-tests"])) {
         throw new Error("--observe never runs tests; drop --tests-report / --run-tests");
       }
-      const outcome = await certify(path, { policy, testsReport, runTestsLocally: values["run-tests"], observe });
+      const outcome = await certify(path, { policy, testsReport, runTestsLocally: values["run-tests"], observe, witness });
       const { statement } = outcome;
       const p = statement.predicate;
       const c = p.checks;

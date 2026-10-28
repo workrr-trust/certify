@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.1.7 (2026-10-28)
+
+Reproduced (gold) can be awarded. The second forge is the **GitLab witness**: this
+release's `.gitlab-ci.yml`, run in `gitlab.com/workrr-trust/certify-gitlab` against
+a public GitHub commit (docs/gitlab-certifier.md).
+
+- Trust policy: new signer role `witness` for
+  `https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.7`
+  (issuer `https://gitlab.com`). Its Fulcio source repository must be that project.
+  Alone it verifies as `scanned`; next to the publisher's own Tested certificate
+  from GitHub for the same repository, commit, path and checks it makes `gold`.
+- Removed the GitLab identities v0.1.1 listed for `certify-gitlab@v0.1.0/v0.1.1` and
+  the ledger mirror's CI file. None was ever a signer, and the mirror is not a
+  certifier.
+- `.gitlab-ci.yml` rewritten: runs only in `certify-gitlab` on a release tag, builds
+  the certifier from its own checkout (variables can no longer name another
+  certifier repository or commit), and takes `WORKRR_REPO`, `WORKRR_COMMIT` and
+  `WORKRR_PATH` for the commit to certify.
+- `workrr certify --witness https://github.com/<owner>/<repo>` (TypeScript and Go):
+  records that repository as the source of a checkout made outside its own CI.
+  Tests still count.
+- Gold compares the publisher (owner/repo across forges) as well as commit, path and
+  checks. Any agreeing pair counts: a digest often has certificates from
+  several commits.
+- Signed trust policies: a signer with a role this release doesn't know is skipped
+  instead of rejecting the policy. Releases before 0.1.7 reject a signed policy that
+  lists the witness, so none is published while they are in use.
+- Trust policy: pin v0.1.6: `certify.yml` to its tag object
+  `90f9138d6ed5e55981ad1dbb90b5a2345f420b0e`, and `scan.yml` to the tagged commit
+  `a6aaa8f664d87f7dc2b8becb6382b29c15763025`. Accept this release by exact tag
+  until v0.1.8 pins it.
+- `watch.yml` dispatches `scan.yml` at v0.1.7.
+
 ## 0.1.6 (2026-10-28)
 
 Fewer false findings. The first public backfill flagged wording that is not

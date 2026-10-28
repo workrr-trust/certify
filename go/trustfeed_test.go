@@ -234,3 +234,40 @@ func rewriteHost(base string) http.RoundTripper {
 		return http.DefaultTransport.RoundTrip(req)
 	})
 }
+
+func TestTrustPolicySkipsUnknownRoles(t *testing.T) {
+	signer := map[string]any{
+		"forge": "gitlab", "issuer": "https://gitlab.com", "buildSignerDigests": []any{},
+		"subjectAlternativeName": `^https://gitlab\.com/workrr-trust/certify-gitlab//\.gitlab-ci\.yml@refs/tags/v0\.1\.7$`,
+	}
+	with := func(roles ...string) string {
+		var list []any
+		for _, r := range roles {
+			s := map[string]any{}
+			for k, v := range signer {
+				s[k] = v
+			}
+			s["role"] = r
+			list = append(list, s)
+		}
+		b, _ := json.Marshal(map[string]any{
+			"schema": "workrr-trust-policy-v1", "sequence": 2, "issuedAt": "2026-10-22T00:00:00Z",
+			"signers":               list,
+			"baselinePolicyDigests": map[string]any{"workrr-baseline-v0.1": "sha256:" + strings.Repeat("0", 64)},
+			"revocationFeed":        "https://trust-api.workrr.ai/v1/revocations",
+			"revocationWatermark":   0,
+			"revocationHead":        strings.Repeat("0", 64),
+		})
+		return string(b)
+	}
+	doc, err := parseTrustPolicy(with("witness", "auditor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Signers) != 1 || doc.Signers[0].Role != RoleWitness {
+		t.Errorf("signers: %+v", doc.Signers)
+	}
+	if _, err := parseTrustPolicy(with("auditor")); err == nil {
+		t.Error("accepted a policy with no known signer")
+	}
+}

@@ -19,6 +19,7 @@ import {
   decidePolicy,
   decideRevocation,
   offlineFallback,
+  parseTrustPolicy,
 } from "../dist/trust-feed.js";
 import { loadTrustPolicy } from "../dist/policy-loader.js";
 import { matchSigner } from "../dist/verify.js";
@@ -182,4 +183,17 @@ test("fetch failure uses a stale cache, or the embedded policy", async () => {
   assert.equal(missing.source, "embedded");
   assert.deepEqual(missing.warnings, [FETCH_FAILED_EMBEDDED_WARNING, REVOCATION_UNCHECKED_WARNING]);
   assert.equal(missing.revocationChecked, false);
+});
+
+test("a signer with an unknown role is skipped; witness signers are kept", () => {
+  const valid = vectors.cases.find((c) => c.id === "valid-policy");
+  const doc = JSON.parse(Buffer.from(valid.blob.payload, "base64").toString("utf8"));
+  const witness = doc.signers.find((s) => s.role === "witness");
+  assert.ok(witness, "the policy lists the GitLab witness");
+  const future = { ...witness, role: "auditor" };
+  const parsed = parseTrustPolicy(JSON.stringify({ ...doc, signers: [...doc.signers, future] }));
+  assert.equal(parsed.ok, undefined, parsed.error);
+  assert.equal(parsed.signers.length, doc.signers.length);
+  assert.equal(parsed.signers.find((s) => s.forge === "gitlab")?.role, "witness");
+  assert.equal(parseTrustPolicy(JSON.stringify({ ...doc, signers: [future] })).error, "malformed trust policy");
 });

@@ -85,7 +85,7 @@ below are what certificates carry.
 | `banded` | provenance, policy, scan `pass`; tests `none` (not deterministically testable). Receives a deterministic `A`–`E` trust band (`predicate.band`). |
 | `scanned` | a **public scan** ([docs/public-scans.md](../docs/public-scans.md)): an *observer* certifier run by workrr in its own repository read a public commit. Provenance, policy, scan `pass`; tests always `none` (a scan never runs the project's code). Not signed by the maintainer. Carries the same `A`–`E` band as `banded`. Ranks below `banded`. |
 | *(no certificate)* | any check `fail` — the certifier exits non-zero and nothing is signed as a certificate. A public scan that fails a security check signs a **finding** instead (§8). |
-| `gold` | **Assigned only by verifiers, never by certifiers:** two `silver` certificates for the same digest, signed by accepted certifier identities on two different forges, with identical `checks`. |
+| `gold` | **Assigned only by verifiers, never by certifiers:** two `silver` certificates for the same digest, signed by accepted certifier identities on two different forges, with identical `checks` and the same repository, commit and path. The GitHub one must be the publisher's own; the GitLab one may be the **witness** (§6). |
 
 **Trust bands (`A`–`E`).** When `level` is `banded`, the certifier computes a deterministic
 `A`–`E` grade over four intrinsic signals (1 point each; 4 → `A`, 3 → `B`, 2 → `C`,
@@ -106,7 +106,12 @@ below are what certificates carry.
 - The built-in trust policy accepts only
   `certify.yml@refs/tags/v0.1.0` (digest `9fbe3e453cbd80bef0301f08db79408bb12c7d64`)
   and `certify.yml@refs/tags/v0.1.1` (digest `78d8c1a98c929b7b1c1b532c25256582a84887b1`).
-  `refs/heads/main` is not accepted. No GitLab signer is listed.
+  `refs/heads/main` is not accepted. Later releases are pinned the same way
+  (`src/trust-policy.ts`).
+- On GitLab the identity is the top-level `.gitlab-ci.yml` of the project running the
+  pipeline: `https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/<tag>`,
+  issuer `https://gitlab.com`, Build Signer Digest = `ci_config_sha` (the tagged
+  commit). It is accepted only as a witness (§6).
 
 ## 6. Verification
 
@@ -130,6 +135,13 @@ A verifier must:
    observed repository and is not cross-checked against Fulcio. Such a bundle is
    reported as `scanned` only when no publisher bundle verifies, and it never counts
    toward `gold`. A publisher signer's certificate that claims `scanned` is rejected.
+   **Witness signers** (`"role": "witness"`, the GitLab certifier) read a public
+   commit from outside its repository's own CI: their Fulcio `SourceRepositoryURI`
+   must be `https://gitlab.com/workrr-trust/certify-gitlab`, `source.commit` must be a
+   full SHA, and `predicate.level` must be `silver` or `banded`. The predicate's
+   `source` is not cross-checked against Fulcio. Alone, a witness bundle is reported
+   as `scanned`. Next to a publisher's `silver` from GitHub with the same repository,
+   commit, path and byte-identical `checks`, the result is `gold`.
 6. Read `checks.policy.policyName` and `checks.policy.policyDigest` and report both.
    The name `workrr-baseline-v0.1` is reserved: that name with any other digest is
    rejected. Any other digest is not a baseline result, and the verifier must not
