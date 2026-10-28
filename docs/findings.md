@@ -128,6 +128,10 @@ release).
    event feed is sampled, so this catches only some pushes early.
 4. A commit not dispatched before goes to `scan.yml` in batches of 50. State (last
    commit dispatched per target) is the `watch-state` artifact, kept 30 days.
+5. **Retries.** A scan job that failed since the last run (a Rekor error, a
+   checkout that couldn't fetch) re-queues its target at the same commit, at most
+   twice per commit, so a lasting failure waits for the next commit instead of
+   repeating every hour.
 
 A maintainer who wants every push certified right away can add the one-file
 workflow and get the Signed or Tested level instead.
