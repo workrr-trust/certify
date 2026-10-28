@@ -1,6 +1,6 @@
 // Signed findings (docs/findings.md) and level names.
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -67,4 +67,22 @@ test("scrutiny names map to wire levels", () => {
   assert.deepEqual(["scanned", "banded", "silver", "gold"].map(levelName), ["Scanned", "Signed", "Tested", "Reproduced"]);
   assert.deepEqual(["Signed", "tested", "REPRODUCED", "banded", "scanned"].map(parseLevel), ["banded", "silver", "gold", "banded", "scanned"]);
   assert.equal(parseLevel("platinum"), undefined);
+});
+
+test("ruleset v0.2 cases (shared with the Go tests)", async () => {
+  const { scanText } = await import("../dist/checks/scan.js");
+  const { cases } = JSON.parse(await readFile(join(fixtures, "scan-rule-cases.json"), "utf8"));
+  for (const c of cases) {
+    const got = scanText(c.text, c.file).filter((f) => f.severity !== "warn").map((f) => f.rule).sort();
+    assert.deepEqual(got, c.want, `${c.file}: ${c.text}`);
+  }
+});
+
+test("bidi characters in a test file make a check finding, elsewhere a concealment finding", async () => {
+  const bidi = "x = '‮abc'\n";
+  const inTests = findingStatement(await certify(await skill("Fine.", { "test_bidi.py": bidi }), { observe }));
+  assert.deepEqual(inTests?.predicate.findings.map((i) => i.rule), ["WT003"]);
+  assert.equal(inTests.predicate.kind, "check");
+  const inTool = findingStatement(await certify(await skill("Fine.", { "tool.py": bidi }), { observe }));
+  assert.equal(inTool?.predicate.kind, "concealment");
 });

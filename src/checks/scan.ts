@@ -8,7 +8,7 @@ import { byteOrder, jsonDigest } from "../digest.js";
 export type Severity = "warn" | "high" | "critical";
 type Rule = { id: string; severity: Severity; description: string; pattern: string; flags: string };
 
-export const RULESET_VERSION = "workrr-scan-v0.1";
+export const RULESET_VERSION = "workrr-scan-v0.2";
 
 export type ScanException = {
   rule: string;
@@ -32,9 +32,9 @@ export const RULES: Rule[] = [
   { id: "WT006", severity: "high", description: "Reads credential stores",
     pattern: String.raw`(~|\$HOME)?/?\.(ssh/(id_[a-z0-9]+|authorized_keys)|aws/credentials|netrc|git-credentials|docker/config\.json|kube/config)\b`, flags: "gi" },
   { id: "WT007", severity: "high", description: "Instructs concealment from the user",
-    pattern: String.raw`\b(do\s+not|don't|never)\s+(tell|inform|mention|reveal|show)\b[^\n]{0,40}\bthe\s+(user|human|operator)\b`, flags: "gi" },
+    pattern: String.raw`\b(do\s+not|don't|never)\s+(tell|inform)\s+the\s+(user|human|operator)\s+(about|that)\b|\b(do\s+not|don't|never)\s+(mention|reveal|disclose)\b[^\n]{0,40}\bto\s+the\s+(user|human|operator)\b`, flags: "gi" },
   { id: "WT008", severity: "high", description: "Hidden HTML comment carrying instructions",
-    pattern: String.raw`<!--(?:(?!-->)[\s\S]){0,2000}?\b(ignore|instruction|system prompt|you are|assistant|exfiltrate)\b[\s\S]*?-->`, flags: "gi" },
+    pattern: String.raw`<!--(?:(?!-->)[\s\S]){0,2000}?(\b(ignore|disregard|forget)\s+(all\s+|any\s+)?(previous|prior|above|earlier|preceding)\s+(instructions|prompts|rules|directions)|\byou\s+are\s+now\b|\bexfiltrate\b|\b(do\s+not|don't|never)\s+(tell|inform)\s+the\s+(user|human|operator)\b)[\s\S]*?-->`, flags: "gi" },
   { id: "WT009", severity: "warn", description: "Sends data to a URL",
     pattern: String.raw`\b(post|send|upload|exfiltrate|forward)\b[^\n]{0,60}https?://`, flags: "gi" },
   { id: "WT010", severity: "warn", description: "Large encoded blob",
@@ -52,7 +52,16 @@ export type ScanResult = {
 
 const DEFENSIVE_WT001_LINE = /\b(never\s+follow|not\s+an?\s+instruction|neither\s+an?\s+instruction|prompt[- ]injection|untrusted\s+data)\b/i;
 
+// Rules about text an agent reads as instructions. Tests, fixtures and snapshots are
+// not loaded as instructions (and are where scanners and sanitizers keep their
+// samples), so these rules skip them. Shell, credential and character rules do not.
+const PROMPT_RULES = ["WT001", "WT007", "WT008"];
+export const TEST_PATH = /(^|\/)(test|tests|__tests__|fixtures|__snapshots__)\/|(^|\/)test[_-][^/]*$|[._](test|spec)\.[A-Za-z0-9]+$|\.(snap|snapshot)$/;
+
 function isDefensiveExample(ruleId: string, file: string, lineText: string, matchStartInLine: number): boolean {
+  if (PROMPT_RULES.includes(ruleId) && TEST_PATH.test(file)) return true;
+  // A quoted phrase is an example being discussed ("don't tell the user …"), not an instruction.
+  if (ruleId === "WT007" && /["'`\u201c]/.test(lineText[matchStartInLine - 1] ?? "")) return true;
   if (ruleId !== "WT001") return false;
   if (/(^|\/)(evals|test|tests|fixtures)\//.test(file) && file.endsWith(".json")) return true;
   const before = lineText.slice(0, matchStartInLine);

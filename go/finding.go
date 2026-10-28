@@ -15,8 +15,9 @@ import (
 
 const FindingPredicateType = "https://trust.workrr.ai/finding/v0.1"
 
-// ConcealmentRules are rules whose matches are rarely accidental.
-var ConcealmentRules = []string{"WT002", "WT003", "WT007", "WT008"}
+// ConcealmentRules are rules whose matches are rarely accidental. A finding with
+// one of them outside tests and fixtures is kind "concealment".
+var ConcealmentRules = []string{"WT002", "WT003"}
 
 type FindingItem struct {
 	Check    string `json:"check"`
@@ -82,7 +83,9 @@ func NewFindingStatement(o *CertifyOutcome) *FindingStatement {
 		return nil
 	}
 	kind := "check"
-	if slices.ContainsFunc(items, func(i FindingItem) bool { return slices.Contains(ConcealmentRules, i.Rule) }) {
+	if slices.ContainsFunc(items, func(i FindingItem) bool {
+		return slices.Contains(ConcealmentRules, i.Rule) && !TestPathRe.MatchString(i.File)
+	}) {
 		kind = "concealment"
 	}
 	return &FindingStatement{
@@ -143,10 +146,13 @@ func VerifyFinding(path, bundlePath string, policy *TrustPolicy, tms *TrustedMat
 		Subject       []Subject `json:"subject"`
 		PredicateType string    `json:"predicateType"`
 		Predicate     struct {
-			Source   Source          `json:"source"`
-			Checks   Checks          `json:"checks"`
-			Kind     string          `json:"kind"`
-			Findings json.RawMessage `json:"findings"`
+			Source    Source          `json:"source"`
+			Checks    Checks          `json:"checks"`
+			Kind      string          `json:"kind"`
+			Findings  json.RawMessage `json:"findings"`
+			Certifier struct {
+				Version string `json:"version"`
+			} `json:"certifier"`
 		} `json:"predicate"`
 	}
 	if err := json.Unmarshal(payload, &st); err != nil {
@@ -193,13 +199,14 @@ func VerifyFinding(path, bundlePath string, policy *TrustPolicy, tms *TrustedMat
 	if err != nil {
 		return nil, err
 	}
+	// A different ruleset or policy can't reproduce it either way: say which certifier can.
+	c := outcome.Statement.Predicate.Checks
+	if c.Scan.RulesetDigest != p.Checks.Scan.RulesetDigest || c.Policy.PolicyDigest != p.Checks.Policy.PolicyDigest {
+		return fail("cannot reproduce with this certifier: its ruleset or policy differs from the one that signed the finding (use certify " + p.Certifier.Version + ")")
+	}
 	again := NewFindingStatement(outcome)
 	if again == nil {
 		return fail("not reproduced: the checks pass on this checkout")
-	}
-	c := outcome.Statement.Predicate.Checks
-	if c.Scan.RulesetDigest != p.Checks.Scan.RulesetDigest || c.Policy.PolicyDigest != p.Checks.Policy.PolicyDigest {
-		return fail("cannot reproduce with this certifier: its ruleset or policy differs from the one that signed the finding")
 	}
 	signed, err := DecodeJSON(p.Findings)
 	if err != nil {

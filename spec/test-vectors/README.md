@@ -37,9 +37,9 @@ ECMAScript (see `go/README.md`):
 | 10 | 25 emoji = 50 UTF-16 units, beyond `[^\n]{0,40}` | no finding |
 | 13, 15, 16 | BOM at a line start (after `\n`, `\r`, U+2028) | no finding |
 | 14 | BOM mid-line | WT004 |
-| 22 | WT008 keyword beyond 2000 code units | no finding |
-| 23 | WT008 keyword within 2000 code units | WT008 |
-| 24 | `-->` before the keyword | no finding |
+| 22 | WT008 phrase beyond 2000 code units | no finding |
+| 23 | WT008 phrase within 2000 code units | WT008 |
+| 24 | `-->` before the phrase | no finding |
 | 25–27 | Comment spanning lines | WT008 on line 25 |
 
 Plus: findings ordered by file in UTF-8 byte order (`～.md` before `😀.md`; JavaScript's

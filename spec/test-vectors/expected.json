@@ -1,6 +1,6 @@
 {
-  "rulesetVersion": "workrr-scan-v0.1",
-  "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+  "rulesetVersion": "workrr-scan-v0.2",
+  "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
   "policyDigests": {
     "baseline": "sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19",
     "strict-tools": "sha256:3b9169e4b14c60de09a3c692a044d3df01cca3a7e7a5b2975b53853bd455933d",
@@ -44,8 +44,8 @@
       "name": "csv-summary",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -88,11 +88,11 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
-        "strict-tools": "{\"policy\":{\"policyDigest\":\"sha256:3b9169e4b14c60de09a3c692a044d3df01cca3a7e7a5b2975b53853bd455933d\",\"policyName\":\"strict\",\"result\":\"fail\",\"violations\":[\"tool not allowed by policy: Read\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
-        "strict-all": "{\"policy\":{\"policyDigest\":\"sha256:61018e202900e509c50aeded00cf3df123ec35c48f5a05b293c629aeb05477b5\",\"policyName\":\"strict-all\",\"result\":\"fail\",\"violations\":[\"total size 761 bytes exceeds 100\",\"SKILL.md frontmatter missing \\\"license\\\"\",\"no LICENSE file\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
-        "no-tools": "{\"policy\":{\"policyDigest\":\"sha256:055675c890ee3c270b9bda94e3f4421496666cb252ab163cbba83868d137ae92\",\"policyName\":\"no-tools\",\"result\":\"fail\",\"violations\":[\"tool not allowed by policy: Read\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
-        "unnamed-extra-keys": "{\"policy\":{\"policyDigest\":\"sha256:f5a7cc1cf70847a6a453807d62e36140cde066e5643ae8c9911f04fa6e52573f\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
+        "strict-tools": "{\"policy\":{\"policyDigest\":\"sha256:3b9169e4b14c60de09a3c692a044d3df01cca3a7e7a5b2975b53853bd455933d\",\"policyName\":\"strict\",\"result\":\"fail\",\"violations\":[\"tool not allowed by policy: Read\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
+        "strict-all": "{\"policy\":{\"policyDigest\":\"sha256:61018e202900e509c50aeded00cf3df123ec35c48f5a05b293c629aeb05477b5\",\"policyName\":\"strict-all\",\"result\":\"fail\",\"violations\":[\"total size 761 bytes exceeds 100\",\"SKILL.md frontmatter missing \\\"license\\\"\",\"no LICENSE file\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
+        "no-tools": "{\"policy\":{\"policyDigest\":\"sha256:055675c890ee3c270b9bda94e3f4421496666cb252ab163cbba83868d137ae92\",\"policyName\":\"no-tools\",\"result\":\"fail\",\"violations\":[\"tool not allowed by policy: Read\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
+        "unnamed-extra-keys": "{\"policy\":{\"policyDigest\":\"sha256:f5a7cc1cf70847a6a453807d62e36140cde066e5643ae8c9911f04fa6e52573f\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "bad-skill": {
@@ -109,8 +109,8 @@
       "name": "helpful-formatter",
       "scan": {
         "result": "fail",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": [
           {
             "rule": "WT001",
@@ -159,17 +159,17 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[{\"file\":\"SKILL.md\",\"line\":10,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":10,\"rule\":\"WT006\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":10,\"rule\":\"WT008\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":12,\"rule\":\"WT005\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":14,\"rule\":\"WT007\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":16,\"rule\":\"WT002\",\"severity\":\"critical\"}],\"result\":\"fail\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[{\"file\":\"SKILL.md\",\"line\":10,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":10,\"rule\":\"WT006\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":10,\"rule\":\"WT008\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":12,\"rule\":\"WT005\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":14,\"rule\":\"WT007\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":16,\"rule\":\"WT002\",\"severity\":\"critical\"}],\"result\":\"fail\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "scan-edges": {
       "algorithm": "workrr-dirhash-v1",
-      "digest": "546325a59e2ba85a65be56f9aad0e7e4f105f2e34d42b63d66b0fa670983e344",
+      "digest": "7c3eca2663d6809436f0690005b14df809326a7867e2c931565a8ba6e3d611f6",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "cd3ccb80cc02664b39046e463e1383e366a6400e63c0edd21ab5d5567cd45645",
-          "size": 7496
+          "sha256": "5bcb31ec042f25e255c4167f69163bd226264b239906b66aaa2eba44d693ae76",
+          "size": 7512
         },
         {
           "path": "alias.md",
@@ -198,8 +198,8 @@
         },
         {
           "path": "invalid-utf8.md",
-          "sha256": "337fc516a111d506d3e4a149dadd8817d4b89c76dc37f689455e6dc7ce93b3e9",
-          "size": 82
+          "sha256": "267dce2ce61a86f6f632039b63c724c4fc7cb5a8086fa4cd209c7aa67378c432",
+          "size": 88
         },
         {
           "path": "\uff5e.md",
@@ -216,8 +216,8 @@
       "name": "scan-edges",
       "scan": {
         "result": "fail",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": [
           {
             "rule": "WT001",
@@ -374,7 +374,7 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[{\"file\":\"SKILL.md\",\"line\":5,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":6,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":9,\"rule\":\"WT006\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":11,\"rule\":\"WT007\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":12,\"rule\":\"WT004\",\"severity\":\"warn\"},{\"file\":\"SKILL.md\",\"line\":14,\"rule\":\"WT004\",\"severity\":\"warn\"},{\"file\":\"SKILL.md\",\"line\":17,\"rule\":\"WT003\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":18,\"rule\":\"WT002\",\"severity\":\"critical\"},{\"file\":\"SKILL.md\",\"line\":19,\"rule\":\"WT009\",\"severity\":\"warn\"},{\"file\":\"SKILL.md\",\"line\":20,\"rule\":\"WT010\",\"severity\":\"warn\"},{\"file\":\"SKILL.md\",\"line\":21,\"rule\":\"WT005\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":23,\"rule\":\"WT008\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":25,\"rule\":\"WT008\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":28,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":29,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":30,\"rule\":\"WT008\",\"severity\":\"high\"},{\"file\":\"alias.md\",\"line\":1,\"rule\":\"WT007\",\"severity\":\"high\"},{\"file\":\"alias.md\",\"line\":2,\"rule\":\"WT009\",\"severity\":\"warn\"},{\"file\":\"data/crlf.txt\",\"line\":2,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"docs/notes.md\",\"line\":1,\"rule\":\"WT007\",\"severity\":\"high\"},{\"file\":\"docs/notes.md\",\"line\":2,\"rule\":\"WT009\",\"severity\":\"warn\"},{\"file\":\"invalid-utf8.md\",\"line\":1,\"rule\":\"WT007\",\"severity\":\"high\"},{\"file\":\"\uff5e.md\",\"line\":1,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"\ud83d\ude00.md\",\"line\":1,\"rule\":\"WT001\",\"severity\":\"high\"}],\"result\":\"fail\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[{\"file\":\"SKILL.md\",\"line\":5,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":6,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":9,\"rule\":\"WT006\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":11,\"rule\":\"WT007\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":12,\"rule\":\"WT004\",\"severity\":\"warn\"},{\"file\":\"SKILL.md\",\"line\":14,\"rule\":\"WT004\",\"severity\":\"warn\"},{\"file\":\"SKILL.md\",\"line\":17,\"rule\":\"WT003\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":18,\"rule\":\"WT002\",\"severity\":\"critical\"},{\"file\":\"SKILL.md\",\"line\":19,\"rule\":\"WT009\",\"severity\":\"warn\"},{\"file\":\"SKILL.md\",\"line\":20,\"rule\":\"WT010\",\"severity\":\"warn\"},{\"file\":\"SKILL.md\",\"line\":21,\"rule\":\"WT005\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":23,\"rule\":\"WT008\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":25,\"rule\":\"WT008\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":28,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":29,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"SKILL.md\",\"line\":30,\"rule\":\"WT008\",\"severity\":\"high\"},{\"file\":\"alias.md\",\"line\":1,\"rule\":\"WT007\",\"severity\":\"high\"},{\"file\":\"alias.md\",\"line\":2,\"rule\":\"WT009\",\"severity\":\"warn\"},{\"file\":\"data/crlf.txt\",\"line\":2,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"docs/notes.md\",\"line\":1,\"rule\":\"WT007\",\"severity\":\"high\"},{\"file\":\"docs/notes.md\",\"line\":2,\"rule\":\"WT009\",\"severity\":\"warn\"},{\"file\":\"invalid-utf8.md\",\"line\":1,\"rule\":\"WT007\",\"severity\":\"high\"},{\"file\":\"\uff5e.md\",\"line\":1,\"rule\":\"WT001\",\"severity\":\"high\"},{\"file\":\"\ud83d\ude00.md\",\"line\":1,\"rule\":\"WT001\",\"severity\":\"high\"}],\"result\":\"fail\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "policy-edges": {
@@ -406,8 +406,8 @@
       "name": "policy-edges",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -437,8 +437,8 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"fail\",\"violations\":[\"forbidden file type: tool.EXE\",\"SKILL.md frontmatter missing \\\"description\\\"\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
-        "strict-all": "{\"policy\":{\"policyDigest\":\"sha256:61018e202900e509c50aeded00cf3df123ec35c48f5a05b293c629aeb05477b5\",\"policyName\":\"strict-all\",\"result\":\"fail\",\"violations\":[\"total size 137 bytes exceeds 100\",\"forbidden file type: lib/run.Sh\",\"forbidden file type: tool.EXE\",\"SKILL.md frontmatter missing \\\"description\\\"\",\"SKILL.md frontmatter missing \\\"license\\\"\",\"tool not allowed by policy: Bash\",\"tool not allowed by policy: WebFetch\",\"no LICENSE file\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"fail\",\"violations\":[\"forbidden file type: tool.EXE\",\"SKILL.md frontmatter missing \\\"description\\\"\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
+        "strict-all": "{\"policy\":{\"policyDigest\":\"sha256:61018e202900e509c50aeded00cf3df123ec35c48f5a05b293c629aeb05477b5\",\"policyName\":\"strict-all\",\"result\":\"fail\",\"violations\":[\"total size 137 bytes exceeds 100\",\"forbidden file type: lib/run.Sh\",\"forbidden file type: tool.EXE\",\"SKILL.md frontmatter missing \\\"description\\\"\",\"SKILL.md frontmatter missing \\\"license\\\"\",\"tool not allowed by policy: Bash\",\"tool not allowed by policy: WebFetch\",\"no LICENSE file\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "yaml-scalars": {
@@ -460,8 +460,8 @@
       "name": "yaml-scalars",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -507,8 +507,8 @@
         }
       },
       "checks": {
-        "strict-tools": "{\"policy\":{\"policyDigest\":\"sha256:3b9169e4b14c60de09a3c692a044d3df01cca3a7e7a5b2975b53853bd455933d\",\"policyName\":\"strict\",\"result\":\"fail\",\"violations\":[\"tool not allowed by policy: 12\",\"tool not allowed by policy: 15\",\"tool not allowed by policy: 31\",\"tool not allowed by policy: 1000\",\"tool not allowed by policy: 0.5\",\"tool not allowed by policy: true\",\"tool not allowed by policy: true\",\"tool not allowed by policy: null\",\"tool not allowed by policy: null\",\"tool not allowed by policy: -Infinity\",\"tool not allowed by policy: NaN\",\"tool not allowed by policy: 1_000\",\"tool not allowed by policy: Read\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
-        "strict-all": "{\"policy\":{\"policyDigest\":\"sha256:61018e202900e509c50aeded00cf3df123ec35c48f5a05b293c629aeb05477b5\",\"policyName\":\"strict-all\",\"result\":\"fail\",\"violations\":[\"total size 241 bytes exceeds 100\",\"tool not allowed by policy: 12\",\"tool not allowed by policy: 15\",\"tool not allowed by policy: 31\",\"tool not allowed by policy: 1000\",\"tool not allowed by policy: 0.5\",\"tool not allowed by policy: true\",\"tool not allowed by policy: true\",\"tool not allowed by policy: null\",\"tool not allowed by policy: null\",\"tool not allowed by policy: -Infinity\",\"tool not allowed by policy: NaN\",\"tool not allowed by policy: 1_000\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "strict-tools": "{\"policy\":{\"policyDigest\":\"sha256:3b9169e4b14c60de09a3c692a044d3df01cca3a7e7a5b2975b53853bd455933d\",\"policyName\":\"strict\",\"result\":\"fail\",\"violations\":[\"tool not allowed by policy: 12\",\"tool not allowed by policy: 15\",\"tool not allowed by policy: 31\",\"tool not allowed by policy: 1000\",\"tool not allowed by policy: 0.5\",\"tool not allowed by policy: true\",\"tool not allowed by policy: true\",\"tool not allowed by policy: null\",\"tool not allowed by policy: null\",\"tool not allowed by policy: -Infinity\",\"tool not allowed by policy: NaN\",\"tool not allowed by policy: 1_000\",\"tool not allowed by policy: Read\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}",
+        "strict-all": "{\"policy\":{\"policyDigest\":\"sha256:61018e202900e509c50aeded00cf3df123ec35c48f5a05b293c629aeb05477b5\",\"policyName\":\"strict-all\",\"result\":\"fail\",\"violations\":[\"total size 241 bytes exceeds 100\",\"tool not allowed by policy: 12\",\"tool not allowed by policy: 15\",\"tool not allowed by policy: 31\",\"tool not allowed by policy: 1000\",\"tool not allowed by policy: 0.5\",\"tool not allowed by policy: true\",\"tool not allowed by policy: true\",\"tool not allowed by policy: null\",\"tool not allowed by policy: null\",\"tool not allowed by policy: -Infinity\",\"tool not allowed by policy: NaN\",\"tool not allowed by policy: 1_000\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "yaml-sequence": {
@@ -525,8 +525,8 @@
       "name": "yaml-sequence",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -541,7 +541,7 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"fail\",\"violations\":[\"SKILL.md frontmatter missing \\\"name\\\"\",\"SKILL.md frontmatter missing \\\"description\\\"\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"fail\",\"violations\":[\"SKILL.md frontmatter missing \\\"name\\\"\",\"SKILL.md frontmatter missing \\\"description\\\"\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "yaml-duplicate-key": {
@@ -558,8 +558,8 @@
       "name": "yaml-duplicate-key",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -575,7 +575,7 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"fail\",\"violations\":[\"SKILL.md has no parseable YAML frontmatter\",\"SKILL.md frontmatter missing \\\"name\\\"\",\"SKILL.md frontmatter missing \\\"description\\\"\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"fail\",\"violations\":[\"SKILL.md has no parseable YAML frontmatter\",\"SKILL.md frontmatter missing \\\"name\\\"\",\"SKILL.md frontmatter missing \\\"description\\\"\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "yaml-binary-name": {
@@ -592,8 +592,8 @@
       "name": "yaml-binary-name",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -608,7 +608,7 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"fail\",\"violations\":[\"SKILL.md frontmatter missing \\\"name\\\"\",\"SKILL.md frontmatter missing \\\"description\\\"\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"fail\",\"violations\":[\"SKILL.md frontmatter missing \\\"name\\\"\",\"SKILL.md frontmatter missing \\\"description\\\"\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "no-frontmatter": {
@@ -625,8 +625,8 @@
       "name": "no-frontmatter",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -642,7 +642,7 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"fail\",\"violations\":[\"SKILL.md has no parseable YAML frontmatter\",\"SKILL.md frontmatter missing \\\"name\\\"\",\"SKILL.md frontmatter missing \\\"description\\\"\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"fail\",\"violations\":[\"SKILL.md has no parseable YAML frontmatter\",\"SKILL.md frontmatter missing \\\"name\\\"\",\"SKILL.md frontmatter missing \\\"description\\\"\"]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "single-file": {
@@ -659,8 +659,8 @@
       "name": "single",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -672,7 +672,7 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "mcp-server": {
@@ -694,8 +694,8 @@
       "name": "io.example/weather",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -707,7 +707,7 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "mcp-bad-json": {
@@ -724,8 +724,8 @@
       "name": "mcp-bad-json",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -737,7 +737,7 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "agent-context": {
@@ -754,8 +754,8 @@
       "name": "agent-context",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -767,7 +767,7 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     },
     "other": {
@@ -789,8 +789,8 @@
       "name": "other",
       "scan": {
         "result": "pass",
-        "rulesetVersion": "workrr-scan-v0.1",
-        "rulesetDigest": "sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0",
+        "rulesetVersion": "workrr-scan-v0.2",
+        "rulesetDigest": "sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c",
         "findings": []
       },
       "policies": {
@@ -802,7 +802,7 @@
         }
       },
       "checks": {
-        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:f7f2b647c6e12902f4542ae9d5f607a7f1915e2c8bfa380b1c4cd82924b08ae0\",\"rulesetVersion\":\"workrr-scan-v0.1\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
+        "baseline": "{\"policy\":{\"policyDigest\":\"sha256:4cf73fa48767c1a2c38ed55ed9b601609cbbf579aa283d5f728867d945f57d19\",\"policyName\":\"workrr-baseline-v0.1\",\"result\":\"pass\",\"violations\":[]},\"provenance\":{\"result\":\"pass\",\"unchangedFromCommit\":true},\"scan\":{\"findings\":[],\"result\":\"pass\",\"rulesetDigest\":\"sha256:83275addea07d40db34297e0117a9a5227cd9f40818f39659f956b3754a3885c\",\"rulesetVersion\":\"workrr-scan-v0.2\"},\"tests\":{\"command\":\"node check.cjs\",\"exitCode\":0,\"result\":\"pass\"}}"
       }
     }
   }

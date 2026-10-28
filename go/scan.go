@@ -25,7 +25,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"unicode/utf16"
+	"unicode/utf8"
 )
 
 type Severity string
@@ -38,7 +38,7 @@ type Rule struct {
 	Flags       string   `json:"flags"`
 }
 
-const RulesetVersion = "workrr-scan-v0.1"
+const RulesetVersion = "workrr-scan-v0.2"
 
 var Rules = []Rule{
 	{ID: "WT001", Severity: "high", Description: "Instruction override phrasing",
@@ -54,9 +54,9 @@ var Rules = []Rule{
 	{ID: "WT006", Severity: "high", Description: "Reads credential stores",
 		Pattern: "(~|\\$HOME)?/?\\.(ssh/(id_[a-z0-9]+|authorized_keys)|aws/credentials|netrc|git-credentials|docker/config\\.json|kube/config)\\b", Flags: "gi"},
 	{ID: "WT007", Severity: "high", Description: "Instructs concealment from the user",
-		Pattern: "\\b(do\\s+not|don't|never)\\s+(tell|inform|mention|reveal|show)\\b[^\\n]{0,40}\\bthe\\s+(user|human|operator)\\b", Flags: "gi"},
+		Pattern: "\\b(do\\s+not|don't|never)\\s+(tell|inform)\\s+the\\s+(user|human|operator)\\s+(about|that)\\b|\\b(do\\s+not|don't|never)\\s+(mention|reveal|disclose)\\b[^\\n]{0,40}\\bto\\s+the\\s+(user|human|operator)\\b", Flags: "gi"},
 	{ID: "WT008", Severity: "high", Description: "Hidden HTML comment carrying instructions",
-		Pattern: "<!--(?:(?!-->)[\\s\\S]){0,2000}?\\b(ignore|instruction|system prompt|you are|assistant|exfiltrate)\\b[\\s\\S]*?-->", Flags: "gi"},
+		Pattern: "<!--(?:(?!-->)[\\s\\S]){0,2000}?" + wt008Phrase + "[\\s\\S]*?-->", Flags: "gi"},
 	{ID: "WT009", Severity: "warn", Description: "Sends data to a URL",
 		Pattern: "\\b(post|send|upload|exfiltrate|forward)\\b[^\\n]{0,60}https?://", Flags: "gi"},
 	{ID: "WT010", Severity: "warn", Description: "Large encoded blob",
@@ -127,7 +127,7 @@ var matchers = func() map[string]matcher {
 }()
 
 var (
-	evalFixturePathRe   = regexp.MustCompile(`(^|/)(evals|test|tests|fixtures)/`)
+	evalFixturePathRe    = regexp.MustCompile(`(^|/)(evals|test|tests|fixtures)/`)
 	defensiveWT001LineRe = regexp.MustCompile(`\b(` + asciiFold("never") + `[` + JSWhitespaceClass + `]+` + asciiFold("follow") +
 		`|` + asciiFold("not") + `[` + JSWhitespaceClass + `]+` + asciiFold("a") + asciiFold("n") + `?[` + JSWhitespaceClass + `]+` + asciiFold("instruction") +
 		`|` + asciiFold("neither") + `[` + JSWhitespaceClass + `]+` + asciiFold("a") + asciiFold("n") + `?[` + JSWhitespaceClass + `]+` + asciiFold("instruction") +
@@ -135,7 +135,24 @@ var (
 		`|` + asciiFold("untrusted") + `[` + JSWhitespaceClass + `]+` + asciiFold("data") + `)\b`)
 )
 
-func isDefensiveExample(ruleID, file, lineText string, colBytes int) bool {
+// promptRules are about text an agent reads as instructions. Tests, fixtures and
+// snapshots are not loaded as instructions (and are where scanners and sanitizers
+// keep their samples), so these rules skip them. Shell, credential and character
+// rules do not.
+var (
+	promptRules = []string{"WT001", "WT007", "WT008"}
+	TestPathRe  = regexp.MustCompile(`(^|/)(test|tests|__tests__|fixtures|__snapshots__)/|(^|/)test[_-][^/]*$|[._](test|spec)\.[A-Za-z0-9]+$|\.(snap|snapshot)$`)
+)
+
+// prev is the code unit just before the match (-1 at the start of a line).
+func isDefensiveExample(ruleID, file, lineText string, colBytes int, prev rune) bool {
+	if slices.Contains(promptRules, ruleID) && TestPathRe.MatchString(file) {
+		return true
+	}
+	// A quoted phrase is an example being discussed, not an instruction.
+	if ruleID == "WT007" && (prev == '"' || prev == '\'' || prev == '`' || prev == 0x201C) {
+		return true
+	}
 	if ruleID != "WT001" {
 		return false
 	}
@@ -229,7 +246,11 @@ func ScanText(text, file string) []Finding {
 			if lineIdx < len(lines) {
 				lineText = lines[lineIdx]
 			}
-			if isDefensiveExample(r.ID, file, lineText, col) {
+			prev := rune(-1)
+			if col > 0 {
+				prev, _ = utf8.DecodeLastRuneInString(prefix)
+			}
+			if isDefensiveExample(r.ID, file, lineText, col, prev) {
 				continue
 			}
 			seen[line] = true
@@ -259,113 +280,51 @@ func matchWT004(text string) (string, []int) {
 	return text, starts
 }
 
-var wt008Keywords = []string{"ignore", "instruction", "system prompt", "you are", "assistant", "exfiltrate"}
+// wt008Phrase is WT008's phrase group: instruction-override wording, "you are
+// now", "exfiltrate", or an instruction to keep something from the user.
+const wt008Phrase = "(\\b(ignore|disregard|forget)\\s+(all\\s+|any\\s+)?(previous|prior|above|earlier|preceding)\\s+(instructions|prompts|rules|directions)|\\byou\\s+are\\s+now\\b|\\bexfiltrate\\b|\\b(do\\s+not|don't|never)\\s+(tell|inform)\\s+the\\s+(user|human|operator)\\b)"
 
-// WT008 `<!--(?:(?!-->)[\s\S]){0,2000}?\b(kw…)\b[\s\S]*?-->` with flags "gim",
-// executed by direct backtracking over UTF-16 code units: from each `<!--`, try
-// the keyword after k = 0, 1, … 2000 consumed units (lazy), where no consumed
-// unit may begin `-->`; on a keyword, the match ends at the first `-->` after it.
-// The next search resumes at the match end, as matchAll does.
+var wt008PhraseRe = regexp.MustCompile(translateRegExp(wt008Phrase, true, false))
+
+// WT008 `<!--(?:(?!-->)[\s\S]){0,2000}?(phrase)[\s\S]*?-->` with flags "gim",
+// over UTF-16 code units. From each `<!--`, the lazy repeat may consume at most
+// 2000 units and none may begin `-->`, so the phrase must start within 2000 units
+// of the opener and before the comment's first `-->`; a phrase never contains
+// `-->`, so it also ends there, and the match ends at that `-->`. The earliest
+// phrase start is RE2's leftmost match over the comment body (phrase alternatives
+// only need to exist at a position, so order does not matter). The next search
+// resumes at the match end, as matchAll does.
 func matchWT008(text string) (string, []int) {
 	subject := CodeUnitString(text)
-	u := utf16.Encode([]rune(text))
-	n := len(u)
-	at := func(i int, s string) bool {
-		if i+len(s) > n {
-			return false
-		}
-		for j := 0; j < len(s); j++ {
-			if u[i+j] != uint16(s[j]) {
-				return false
-			}
-		}
-		return true
+	// unitByte[i] = byte offset in subject of code unit i (one rune per unit).
+	unitByte := make([]int, 0, len(subject)+1)
+	for i := range subject {
+		unitByte = append(unitByte, i)
 	}
-	// nextClose[i] = smallest j >= i where `-->` starts, or -1.
-	nextClose := make([]int, n+1)
-	nextClose[n] = -1
-	for i := n - 1; i >= 0; i-- {
-		if at(i, "-->") {
-			nextClose[i] = i
-		} else {
-			nextClose[i] = nextClose[i+1]
-		}
-	}
-	isWord := func(i int) bool {
-		if i < 0 || i >= n {
-			return false
-		}
-		c := u[i]
-		return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
-	}
-	keywordAt := func(q int) int { // returns keyword end, or -1
-		if isWord(q - 1) {
-			return -1
-		}
-		for _, kw := range wt008Keywords {
-			if q+len(kw) > n {
-				continue
-			}
-			ok := true
-			for j := 0; j < len(kw); j++ {
-				c := u[q+j]
-				if c >= 'A' && c <= 'Z' {
-					c += 'a' - 'A'
-				}
-				if c != uint16(kw[j]) {
-					ok = false
-					break
-				}
-			}
-			if ok && !isWord(q+len(kw)) {
-				return q + len(kw)
-			}
-		}
-		return -1
-	}
-	tryAt := func(s int) int { // returns match end, or -1
-		for k := 0; ; k++ {
-			q := s + 4 + k
-			if e := keywordAt(q); e >= 0 && e <= n {
-				if c := nextClose[e]; c >= 0 {
-					return c + 3
-				}
-			}
-			if k == 2000 || q >= n || at(q, "-->") {
-				return -1
-			}
-		}
-	}
-
-	// Map code-unit offsets to byte offsets in subject (one rune per unit).
+	n := len(unitByte)
+	unitByte = append(unitByte, len(subject))
 	var starts []int
 	for s := 0; s+4 <= n; {
-		if at(s, "<!--") {
-			if end := tryAt(s); end >= 0 {
-				starts = append(starts, s)
-				s = end
-				continue
-			}
+		body := subject[unitByte[s]:]
+		if !strings.HasPrefix(body, "<!--") {
+			s++
+			continue
+		}
+		bodyStart := s + 4
+		closeAt := strings.Index(subject[unitByte[bodyStart]:], "-->")
+		if closeAt < 0 {
+			s++
+			continue
+		}
+		inner := subject[unitByte[bodyStart] : unitByte[bodyStart]+closeAt]
+		if loc := wt008PhraseRe.FindStringIndex(inner); loc != nil && utf8.RuneCountInString(inner[:loc[0]]) <= 2000 {
+			starts = append(starts, unitByte[s])
+			s = bodyStart + utf8.RuneCountInString(inner) + 3
+			continue
 		}
 		s++
 	}
-	return subject, unitOffsetsToBytes(subject, starts)
-}
-
-func unitOffsetsToBytes(subject string, units []int) []int {
-	if len(units) == 0 {
-		return nil
-	}
-	out := make([]int, 0, len(units))
-	unit, k := 0, 0
-	for i := range subject {
-		for k < len(units) && units[k] == unit {
-			out = append(out, i)
-			k++
-		}
-		unit++
-	}
-	return out
+	return subject, starts
 }
 
 // translateRegExp rewrites the ECMAScript subset used by the ruleset into RE2.

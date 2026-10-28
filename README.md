@@ -252,7 +252,7 @@ npm test
 |---|---|
 | provenance | The artifact is committed and unchanged at the recorded source commit |
 | policy | Conforms to the named policy, pinned by digest. The name `workrr-baseline-v0.1` is reserved for that baseline; a verifier reports a baseline level only for its digest |
-| scan | No high/critical findings from ruleset `workrr-scan-v0.1`, pinned by digest. **Not** "safe" or "injection-free." |
+| scan | No high/critical findings from ruleset `workrr-scan-v0.2` (`v0.1` before 0.1.6), pinned by digest. **Not** "safe" or "injection-free." |
 | tests | The artifact's own declared suite passed. Without a suite the level is Signed (`banded`). |
 
 ## Known limits (v0.1)

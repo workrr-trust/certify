@@ -276,7 +276,8 @@ A public scan that fails a high or critical scan rule, or the policy's forbidden
 file type or escaping symlink rules, signs an in-toto Statement with predicate type
 `https://trust.workrr.ai/finding/v0.1`. Its predicate carries `artifact`, `source`
 and `checks` as in §3 (tests always `none`), plus `kind` (`concealment` when any
-failing rule is WT002, WT003, WT007 or WT008; otherwise `check`), `findings` (one
+failing item is WT002 or WT003 in a file outside tests and fixtures, as defined by
+the scanner's test-path rule; otherwise `check`), `findings` (one
 item per failure: `check`, `rule`, `severity`, `file`, `line` where applicable,
 `detail`), `certifier` and `scannedAt`.
 

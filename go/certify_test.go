@@ -2,6 +2,7 @@ package certify
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -391,9 +392,17 @@ func TestMatchSigner(t *testing.T) {
 	}
 	// The newest release is accepted by its exact tag with any digest; later or
 	// look-alike tags are not.
-	v015 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.5", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
-	if s := MatchSigner(&DefaultTrustPolicy, v015); s == nil || s.Role != "" {
-		t.Errorf("newest release tag v0.1.5: got %+v", s)
+	v016 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.6", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	if s := MatchSigner(&DefaultTrustPolicy, v016); s == nil || s.Role != "" {
+		t.Errorf("newest release tag v0.1.6: got %+v", s)
+	}
+	v015 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.5", Issuer: gh.Issuer, BuildSignerDigest: "ab877ee7bc33604f1d1b95d7e1377f340fd5d476"}
+	if MatchSigner(&DefaultTrustPolicy, v015) == nil {
+		t.Error("rejected v0.1.5 at its pinned tag digest")
+	}
+	v015.BuildSignerDigest = "5fb6a6635f5cee1f8fe51cfa27fa997298d2faf3"
+	if MatchSigner(&DefaultTrustPolicy, v015) != nil {
+		t.Error("accepted certify.yml@v0.1.5 at the peeled commit")
 	}
 	v014 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.4", Issuer: gh.Issuer, BuildSignerDigest: "54b6c3a8f7818d1c8edba145edbf2157c35208d9"}
 	if MatchSigner(&DefaultTrustPolicy, v014) == nil {
@@ -411,9 +420,17 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v013) != nil {
 		t.Error("accepted v0.1.3 at the peeled commit")
 	}
-	scan := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.5", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	scan := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.6", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
 	if s := MatchSigner(&DefaultTrustPolicy, scan); s == nil || s.Role != RoleObserver {
-		t.Errorf("scan.yml@v0.1.5 should be an observer, got %+v", s)
+		t.Errorf("scan.yml@v0.1.6 should be an observer, got %+v", s)
+	}
+	scan15 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.5", Issuer: gh.Issuer, BuildSignerDigest: "5fb6a6635f5cee1f8fe51cfa27fa997298d2faf3"}
+	if s := MatchSigner(&DefaultTrustPolicy, scan15); s == nil || s.Role != RoleObserver {
+		t.Errorf("scan.yml@v0.1.5 at its commit should be an observer, got %+v", s)
+	}
+	scan15.BuildSignerDigest = "ab877ee7bc33604f1d1b95d7e1377f340fd5d476"
+	if MatchSigner(&DefaultTrustPolicy, scan15) != nil {
+		t.Error("accepted scan.yml@v0.1.5 at the tag object")
 	}
 	// scan.yml is dispatched directly: Fulcio records the tagged commit.
 	scan14 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.4", Issuer: gh.Issuer, BuildSignerDigest: "14466afa6a8bc8612292b74ae63e764590041031"}
@@ -436,7 +453,7 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v012) != nil {
 		t.Error("accepted v0.1.2 at the peeled commit")
 	}
-	for _, ref := range []string{"refs/tags/v0.1.6", "refs/tags/v0.1.5x", "refs/tags/v0.1.5-rc1", "refs/heads/v0.1.5"} {
+	for _, ref := range []string{"refs/tags/v0.1.7", "refs/tags/v0.1.6x", "refs/tags/v0.1.6-rc1", "refs/heads/v0.1.6"} {
 		s := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@" + ref, Issuer: gh.Issuer, BuildSignerDigest: tagV010}
 		if MatchSigner(&DefaultTrustPolicy, s) != nil {
 			t.Errorf("accepted %s", ref)
@@ -774,6 +791,36 @@ func TestScannedNeverAddsToPublisherLevel(t *testing.T) {
 	}
 	if !LevelMeetsMinimum("scanned", "scanned") || LevelMeetsMinimum("scanned", "banded") {
 		t.Error("scanned ranks below banded")
+	}
+}
+
+// The shared ruleset v0.2 cases (test/fixtures/scan-rule-cases.json).
+func TestScanRuleCases(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "test", "fixtures", "scan-rule-cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Cases []struct {
+			File string   `json:"file"`
+			Text string   `json:"text"`
+			Want []string `json:"want"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range doc.Cases {
+		got := []string{}
+		for _, f := range ScanText(c.Text, c.File) {
+			if f.Severity != "warn" {
+				got = append(got, f.Rule)
+			}
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, c.Want) {
+			t.Errorf("%s: %q: got %v, want %v", c.File, c.Text, got, c.Want)
+		}
 	}
 }
 
