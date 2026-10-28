@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	Version       = "0.1.7"
+	Version       = "0.1.8"
 	PredicateType = "https://trust.workrr.ai/certificate/v0.1"
 	StatementType = "https://in-toto.io/Statement/v1"
 )

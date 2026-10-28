@@ -1,12 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.1.8 (2026-10-28)
 
 - `scan.yml`: a batch with a single target now lists its record in
   `workrr-scan-index`. download-artifact extracts a lone artifact straight into
   `scans/`, so one-target batches (common for skills submitted at skills.workrr.ai)
   produced an empty index and the ledger never discovered their record. The records
   were still signed and in the attestation store (ingest by digest recovers them).
+- Trust policy: pin v0.1.7: `certify.yml` to its tag object
+  `6291248fc63176cbf4b182c0aaae5aae14819729`; `scan.yml` and the GitLab witness
+  (`.gitlab-ci.yml` in `gitlab.com/workrr-trust/certify-gitlab`) to the tagged commit
+  `0efed0e76b1d0be3d3488ead7ed26023dbe32be6`. Accept this release by exact tag
+  until v0.1.9 pins it.
+- `watch.yml` dispatches `scan.yml` at v0.1.8.
 
 ## 0.1.7 (2026-10-28)
 

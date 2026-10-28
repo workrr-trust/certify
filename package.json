@@ -1,6 +1,6 @@
 {
   "name": "@workrr-trust/certify",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Certify and verify AI agent artifacts (skills, MCP servers, rulesets) with publicly logged, independently verifiable certificates.",
   "license": "Apache-2.0",
   "type": "module",
