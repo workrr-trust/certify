@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.9 (2026-10-28)
 
 - Finding kind: WT002/WT003 matches in bundled or minified code (`dist/`, `build/`,
   `*.min.js`, `*.min.mjs`, `*.min.cjs`, `*.bundle.js`) no longer make a finding
@@ -10,6 +10,11 @@
 - GitLab witness (`scripts/gitlab-sign.mjs`): when Rekor answers a retried upload
   with 409 (the first attempt was logged), fetch that entry instead of failing. A
   witness run for sample-skills failed this way and left a Rekor entry with no bundle.
+- Trust policy: pin v0.1.8: `certify.yml` to its tag object
+  `7b19119ca8e446e2fa533b366e6b6921f6349470`; `scan.yml` and the GitLab witness to the tagged
+  commit `723c2563519c43b86b4518339c13a6cf90fb57c2`. Accept this release by exact tag until
+  v0.1.10 pins it.
+- `watch.yml` dispatches `scan.yml` at v0.1.9.
 
 ## 0.1.8 (2026-10-28)
 

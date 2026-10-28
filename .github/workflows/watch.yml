@@ -30,7 +30,7 @@ concurrency:
 
 env:
   # The release scan.yml runs at. Bump with each release (docs/findings.md).
-  SCAN_TAG: v0.1.8
+  SCAN_TAG: v0.1.9
   TARGETS_URL: https://raw.githubusercontent.com/workrr-trust/ledger/main/scan-targets.txt
 
 jobs:

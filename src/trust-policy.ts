@@ -52,6 +52,8 @@ export type TrustPolicy = { version: string; signers: AcceptedSigner[] };
 //          commit a6aaa8f664d87f7dc2b8becb6382b29c15763025
 //   v0.1.7 tag 6291248fc63176cbf4b182c0aaae5aae14819729
 //          commit 0efed0e76b1d0be3d3488ead7ed26023dbe32be6
+//   v0.1.8 tag 7b19119ca8e446e2fa533b366e6b6921f6349470
+//          commit 723c2563519c43b86b4518339c13a6cf90fb57c2
 //
 // scan.yml is dispatched directly (workflow_dispatch), not called, so for it Fulcio
 // records the tagged COMMIT, not the tag object: scan.yml@v0.1.4 is 14466afa….
@@ -118,10 +120,16 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
       buildSignerDigests: ["6291248fc63176cbf4b182c0aaae5aae14819729"],
     },
     {
-      // NEWEST: this release, by exact tag; v0.1.9 pins its digest.
       forge: "github",
       issuer: "https://token.actions.githubusercontent.com",
       subjectAlternativeName: `^${CERTIFY_SAN}v0\\.1\\.8$`,
+      buildSignerDigests: ["7b19119ca8e446e2fa533b366e6b6921f6349470"],
+    },
+    {
+      // NEWEST: this release, by exact tag; v0.1.10 pins its digest.
+      forge: "github",
+      issuer: "https://token.actions.githubusercontent.com",
+      subjectAlternativeName: `^${CERTIFY_SAN}v0\\.1\\.9$`,
       buildSignerDigests: [],
     },
     {
@@ -156,10 +164,18 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
       role: "observer",
     },
     {
-      // Public scans and signed findings. NEWEST, by exact tag; v0.1.9 pins its commit.
+      // Public scans and signed findings: the tagged commit.
       forge: "github",
       issuer: "https://token.actions.githubusercontent.com",
       subjectAlternativeName: `^${SCAN_SAN}v0\\.1\\.8$`,
+      buildSignerDigests: ["723c2563519c43b86b4518339c13a6cf90fb57c2"],
+      role: "observer",
+    },
+    {
+      // Public scans and signed findings. NEWEST, by exact tag; v0.1.10 pins its commit.
+      forge: "github",
+      issuer: "https://token.actions.githubusercontent.com",
+      subjectAlternativeName: `^${SCAN_SAN}v0\\.1\\.9$`,
       buildSignerDigests: [],
       role: "observer",
     },
@@ -173,10 +189,18 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
       role: "witness",
     },
     {
-      // GitLab witness. NEWEST, by exact tag; v0.1.9 pins its commit.
+      // GitLab witness: the tagged commit (ci_config_sha).
       forge: "gitlab",
       issuer: "https://gitlab.com",
       subjectAlternativeName: `^${WITNESS_SAN}v0\\.1\\.8$`,
+      buildSignerDigests: ["723c2563519c43b86b4518339c13a6cf90fb57c2"],
+      role: "witness",
+    },
+    {
+      // GitLab witness. NEWEST, by exact tag; v0.1.10 pins its commit.
+      forge: "gitlab",
+      issuer: "https://gitlab.com",
+      subjectAlternativeName: `^${WITNESS_SAN}v0\\.1\\.9$`,
       buildSignerDigests: [],
       role: "witness",
     },
