@@ -14,13 +14,17 @@
 // 4. For each candidate, one batched GraphQL query reads the latest commit that
 //    touched its path on the default branch. A commit not yet in the state is
 //    dispatched to scan.yml at SCAN_TAG, 50 per run.
+// 5. Retries: a scan job that failed since the last run (a Rekor error, a checkout
+//    that couldn't fetch) re-queues its target at the same commit, at most RETRIES
+//    times per commit, so a lasting failure doesn't repeat every hour.
 //
-// State (STATE_IN → STATE_OUT, a TSV of repo, path, commit, checkedAt) carries the
-// last commit dispatched per target between runs. Nothing here signs anything:
-// scan.yml does, at a release tag.
+// State (STATE_IN → STATE_OUT, a TSV of repo, path, commit, checkedAt, failures,
+// retry) carries the last commit dispatched per target between runs. Nothing here
+// signs anything: scan.yml does, at a release tag.
 //
 // Env: GH_TOKEN, TARGETS_URL, STATE_IN, STATE_OUT, SCAN_TAG, HOURS (default 3),
-//      SWEEP (default 3000), MAX (default 1000), DRY_RUN=1, REPO (default workrr-trust/certify)
+//      SWEEP (default 3000), MAX (default 1000), RETRIES (default 2), DRY_RUN=1,
+//      REPO (default workrr-trust/certify)
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
@@ -31,6 +35,7 @@ const REPO = env.REPO || "workrr-trust/certify";
 const HOURS = Number(env.HOURS || 3);
 const SWEEP = Number(env.SWEEP || 3000);
 const MAX = Number(env.MAX || 1000);
+const RETRIES = Number(env.RETRIES ?? 2);
 const DRY = env.DRY_RUN === "1";
 const REPO_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
 const PATH_RE = /^([A-Za-z0-9._@+-]+(\/[A-Za-z0-9._@+-]+)*|\.)$/;
@@ -83,8 +88,9 @@ function loadState() {
   const state = new Map();
   if (env.STATE_IN && existsSync(env.STATE_IN)) {
     for (const line of readFileSync(env.STATE_IN, "utf8").split("\n")) {
-      const [repo, path, commit, checkedAt] = line.split("\t");
-      if (repo && path) state.set(`${repo.toLowerCase()} ${path}`, { commit, checkedAt });
+      const [repo, path, commit, checkedAt, failures, retry] = line.split("\t");
+      if (repo && path)
+        state.set(`${repo.toLowerCase()} ${path}`, { commit, checkedAt, failures: Number(failures || 0), retry: retry === "1" });
     }
   }
   return state;
@@ -139,7 +145,48 @@ async function latestCommits(targets) {
   return out;
 }
 
+// The path a scan job ran on, from the env its steps log. A job that failed before
+// the certify step never logs it.
+async function jobPath(id) {
+  const res = await fetch(`https://api.github.com/repos/${REPO}/actions/jobs/${id}/logs`, {
+    headers: { authorization: `Bearer ${env.GH_TOKEN}`, accept: "application/vnd.github+json" },
+  });
+  return res.ok ? /^\S+\s+ARTIFACT_PATH: (.+?)\r?$/m.exec(await res.text())?.[1] : undefined;
+}
+
+// Scan jobs that failed in scan.yml runs updated after `since`, as {repo, commit,
+// path, prefix}. A matrix job is named "scan (owner/repo, commit, path)", but GitHub
+// cuts names at 100 characters with "...". A cut path is read from the job's log;
+// failing that (a checkout that failed, which fails every path at that commit),
+// the cut path is kept as a prefix.
+async function failedScans(since) {
+  const out = [];
+  const created = new Date(Date.parse(since) - 24 * 3600_000).toISOString();
+  for (let page = 1; ; page++) {
+    const { workflow_runs: runs } = await gh(
+      "GET",
+      `/repos/${REPO}/actions/workflows/scan.yml/runs?status=failure&created=${encodeURIComponent(`>=${created}`)}&per_page=100&page=${page}`,
+    );
+    for (const run of runs) {
+      if (run.updated_at <= since) continue;
+      const { jobs } = await gh("GET", `/repos/${REPO}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`);
+      for (const job of jobs) {
+        if (job.conclusion !== "failure" || !job.name.startsWith("scan (")) continue;
+        const m = /^scan \(([^, ]+), ([0-9a-f]{40}), (.+?)(\)|\.\.\.)$/.exec(job.name);
+        if (!m) {
+          log(`failed job ${job.id} not parsed: ${job.name}`);
+          continue;
+        }
+        const path = m[4] === ")" ? m[3] : await jobPath(job.id);
+        out.push({ repo: m[1], commit: m[2], path: path ?? m[3], prefix: !path });
+      }
+    }
+    if (runs.length < 100) return out;
+  }
+}
+
 async function main() {
+  const checkedAt = new Date().toISOString();
   const targets = await loadTargets();
   const state = loadState();
   const byRepo = new Map();
@@ -151,32 +198,50 @@ async function main() {
   log(`${targets.length} target(s) in ${byRepo.size} repo(s); ${state.size} in state`);
 
   const candidates = new Map();
+  // Retries: the newest checkedAt is when the last run started, so a job that failed
+  // since then hasn't been seen. A target is retried at the commit that failed.
+  const since = [...state.values()].reduce((m, v) => (v.checkedAt > m ? v.checkedAt : m), "");
+  if (since && RETRIES > 0) {
+    let n = 0;
+    for (const f of await failedScans(since)) {
+      for (const t of byRepo.get(f.repo.toLowerCase()) ?? []) {
+        const s = state.get(t.key);
+        if (!s || s.retry || s.commit !== f.commit || s.failures >= RETRIES) continue;
+        if (f.prefix ? !t.path.startsWith(f.path) : t.path !== f.path) continue;
+        state.set(t.key, { ...s, failures: s.failures + 1, retry: true });
+        n++;
+      }
+    }
+    log(`${n} failed scan(s) since ${since} to retry`);
+  }
+  for (const t of targets) if (state.get(t.key)?.retry) candidates.set(t.key, t);
+  const retrying = candidates.size;
   const now = Date.now();
   for (let h = HOURS; h >= 1; h--) {
     const hour = new Date(now - h * 3600_000);
     for (const repo of await pushedRepos(hour, byRepo)) for (const t of byRepo.get(repo)) candidates.set(t.key, t);
   }
-  const changed = candidates.size;
+  const changed = candidates.size - retrying;
   const sweep = targets
     .filter((t) => !candidates.has(t.key))
     .sort((a, b) => (state.get(a.key)?.checkedAt ?? "").localeCompare(state.get(b.key)?.checkedAt ?? ""))
     .slice(0, SWEEP);
   for (const t of sweep) candidates.set(t.key, t);
-  log(`${changed} changed, ${sweep.length} swept`);
+  log(`${retrying} retried, ${changed} changed, ${sweep.length} swept`);
 
   const latest = await latestCommits([...candidates.values()]);
-  const checkedAt = new Date().toISOString();
   const queue = [];
   for (const t of candidates.values()) {
     const l = latest.get(t.key);
     if (!l) continue; // query failed; try again next run
     const prev = state.get(t.key) ?? {};
-    if (!l.gone && l.commit && l.commit !== prev.commit) {
+    if (!l.gone && l.commit && (l.commit !== prev.commit || prev.retry)) {
       if (queue.length >= MAX) continue; // over the cap: state untouched, so a later run dispatches it
       queue.push({ repository: t.repo, commit: l.commit, path: t.path });
-      state.set(t.key, { commit: l.commit, checkedAt });
+      // A new commit starts its own count of failures.
+      state.set(t.key, { commit: l.commit, checkedAt, failures: l.commit === prev.commit ? prev.failures : 0 });
     } else {
-      state.set(t.key, { commit: prev.commit ?? "", checkedAt });
+      state.set(t.key, { commit: prev.commit ?? "", checkedAt, failures: prev.failures ?? 0 });
     }
   }
   log(`${queue.length} to scan at ${env.SCAN_TAG}${DRY ? " (dry run)" : ""}`);
@@ -195,7 +260,7 @@ async function main() {
     const rows = [...state].map(([key, v]) => {
       const t = byKey.get(key);
       const [repo, path] = t ? [t.repo, t.path] : key.split(" ");
-      return [repo, path, v.commit ?? "", v.checkedAt ?? ""].join("\t");
+      return [repo, path, v.commit ?? "", v.checkedAt ?? "", v.failures || "", v.retry ? "1" : ""].join("\t");
     });
     writeFileSync(env.STATE_OUT, rows.join("\n") + "\n");
   }
