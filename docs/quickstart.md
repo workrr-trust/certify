@@ -31,7 +31,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
-    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.4
+    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.5
     with:
       path: skills/my-skill
 ```
@@ -40,7 +40,7 @@ Many artifact repos never tag releases, so the workflow also certifies each push
 the default branch (change `main` if yours is `master`). Each run issues a new
 certificate for the artifact as it is at that commit.
 
-Older release tags (`v0.1.0` to `v0.1.3`) still verify; new workflows should use `v0.1.4`. Only release tags verify.
+Older release tags (`v0.1.0` to `v0.1.4`) still verify; new workflows should use `v0.1.5`. Only release tags verify.
 Do not point this `uses` line at a commit SHA, at `main`, or at a tag you cut
 yourself. `id-token` and `attestations` belong on this job because the called
 workflow signs. Do not copy them onto a job that only verifies.

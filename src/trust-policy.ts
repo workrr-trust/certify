@@ -42,7 +42,7 @@ export type TrustPolicy = { version: string; signers: AcceptedSigner[] };
 //          commit 14466afa6a8bc8612292b74ae63e764590041031
 //
 // scan.yml is dispatched directly (workflow_dispatch), not called, so for it Fulcio
-// records the tagged COMMIT, not the tag object: scan.yml@v0.1.4 is 14466afa….
+// records the tagged COMMIT, not the tag object: scan.yml@v0.1.5 is 14466afa….
 //
 // A release can't list its own digest: the tag object names the commit that would
 // contain it. So the newest release is accepted by its exact tag name alone, and the
