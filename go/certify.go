@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	Version       = "0.1.6"
+	Version       = "0.1.7"
 	PredicateType = "https://trust.workrr.ai/certificate/v0.1"
 	StatementType = "https://in-toto.io/Statement/v1"
 )
@@ -84,6 +84,9 @@ type CertifyOptions struct {
 	// Public scan: the repository URL being observed. Tests never run and the
 	// level is "scanned" (docs/public-scans.md).
 	Observe string
+	// GitLab witness (docs/gitlab-certifier.md): the repository URL of a checkout
+	// made outside that repository's own CI. Tests count; the level is silver or banded.
+	Witness string
 }
 
 var (
@@ -127,7 +130,11 @@ func Certify(path string, opts CertifyOptions) (*CertifyOutcome, error) {
 	if err != nil {
 		return nil, err
 	}
-	source, provenance, err := CheckProvenance(path, opts.Observe)
+	observed := opts.Observe
+	if observed == "" {
+		observed = opts.Witness
+	}
+	source, provenance, err := CheckProvenance(path, observed)
 	if err != nil {
 		return nil, err
 	}

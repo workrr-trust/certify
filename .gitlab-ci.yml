@@ -1,150 +1,80 @@
-# workrr Trust certifier — GitLab CI reusable pipeline.
+# workrr trust certifier on GitLab CI: the witness for Reproduced (wire level gold).
 #
-# When mirrored at https://gitlab.com/workrr-trust/certify-gitlab and included by a
-# caller repository at a released tag, Fulcio records:
-#   SAN:                 https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/<tag>
-#   Issuer:              https://gitlab.com
-#   Build Signer Digest: <tag object SHA> (OID 1.3.6.1.4.1.57264.1.10)
+# Runs only in gitlab.com/workrr-trust/certify-gitlab, GitLab's copy of
+# github.com/workrr-trust/certify, on a release tag, for a pipeline started with:
+#   WORKRR_REPO    https://github.com/<owner>/<repo> (public)
+#   WORKRR_COMMIT  full commit SHA
+#   WORKRR_PATH    artifact path in that repository
+# Fulcio records:
+#   SAN                  https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/<tag>
+#   Build Signer Digest  the tagged commit (ci_config_sha)
+#   Source repository    https://gitlab.com/workrr-trust/certify-gitlab
+# The trust policy accepts that identity only as a witness: alone it verifies as
+# Scanned, and next to the publisher's own Tested certificate from certify.yml for
+# the same commit, path and checks it makes Reproduced (docs/gitlab-certifier.md).
 #
-# Caller usage (.gitlab-ci.yml in the artifact's public GitLab repository):
-#
-#   include:
-#     - project: workrr-trust/certify-gitlab
-#       file: /.gitlab-ci.yml
-#       ref: v0.1.1
-#   variables:
-#     WORKRR_PATH: skills/my-skill
-#
-# Security model (identical to .github/workflows/certify.yml):
-#   1. `workrr-resolve` extracts the certifier repository and commit/tag SHA from the
-#      GitLab OIDC token so the certifier code that runs is pinned to the signing identity.
-#   2. `workrr-test` runs the artifact's declared test suite with NO `id_tokens`
-#      (no signing capability).
-#   3. `workrr-certify` never executes artifact code; it re-computes the artifact digest,
-#      verifies that `tests.json` matches that digest, evaluates provenance/policy/scan,
-#      and signs the in-toto DSSE statement with Sigstore Fulcio + public Rekor.
+# Security model (as in .github/workflows/certify.yml): the certifier is this
+# checkout at the tag, so no variable can change the code that signs. Artifact code
+# (its test suite) runs only in workrr-test, which has no id_tokens. workrr-certify
+# never runs artifact code; it re-derives the digest and only accepts a test report
+# for that digest.
+
+workflow:
+  rules:
+    - if: '$CI_PROJECT_PATH == "workrr-trust/certify-gitlab" && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $WORKRR_REPO =~ /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/ && $WORKRR_COMMIT =~ /^[0-9a-f]{40}$/ && $WORKRR_PATH'
 
 stages:
-  - resolve
   - test
   - certify
 
-variables:
-  WORKRR_REPO: ""
-  WORKRR_COMMIT: ""
-  WORKRR_PATH: ""
-  WORKRR_POLICY: ""
-  WORKRR_CERTIFIER_REPO: "https://gitlab.com/workrr-trust/certify-gitlab.git"
-  WORKRR_CERTIFIER_REF: "v0.1.1"
+default:
+  image: node:24-bookworm@sha256:e2007d1f4e652444f88d9bb196256d2d035269015e3d27a0d47c1d0cb5192a98
 
-workrr-resolve:
-  stage: resolve
-  image: node:24-bookworm
-  rules:
-    - if: '$WORKRR_PATH != "" && $WORKRR_PATH != null'
-  id_tokens:
-    WORKRR_RESOLVE_TOKEN:
-      aud: workrr-certify
-  script:
-    - |
-      set -euo pipefail
-      node - <<'EOF' > certifier.env
-      const token = process.env.WORKRR_RESOLVE_TOKEN || "";
-      let repo = process.env.WORKRR_CERTIFIER_REPO || "https://gitlab.com/workrr-trust/certify-gitlab.git";
-      let sha = process.env.WORKRR_CERTIFIER_REF || "v0.1.1";
-      if (token.split(".").length === 3) {
-        const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
-        if (typeof payload.ci_config_sha === "string" && payload.ci_config_sha.length > 0) {
-          sha = payload.ci_config_sha;
-        } else if (typeof payload.ci_config_ref_uri === "string") {
-          const at = payload.ci_config_ref_uri.lastIndexOf("@");
-          if (at > 0) {
-            sha = payload.ci_config_ref_uri.slice(at + 1);
-          }
-        }
-      }
-      console.error(`certifier: ${repo} (${sha})`);
-      process.stdout.write(`CERTIFIER_REPO=${repo}\nCERTIFIER_SHA=${sha}\n`);
-      EOF
-  artifacts:
-    reports:
-      dotenv: certifier.env
+.subject: &subject
+  - |
+    set -euo pipefail
+    # "." is a whole-repo artifact; any other "." or ".." segment is refused.
+    if [[ ! ( $WORKRR_PATH == . || ( $WORKRR_PATH =~ ^[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*$ && ! /$WORKRR_PATH/ =~ /\.\.?/ ) ) ]]; then
+      echo "unsafe WORKRR_PATH: $WORKRR_PATH" >&2
+      exit 1
+    fi
+    npm ci --ignore-scripts && npm run build
+    git init --quiet subject
+    git -C subject fetch --quiet --depth 1 "$WORKRR_REPO" "$WORKRR_COMMIT"
+    git -C subject -c advice.detachedHead=false checkout --quiet FETCH_HEAD
 
 workrr-test:
   stage: test
-  image: node:24-bookworm
-  needs:
-    - job: workrr-resolve
-      artifacts: true
-  rules:
-    - if: '$WORKRR_PATH != "" && $WORKRR_PATH != null'
-  # No id_tokens in this job: artifact test suites cannot access any OIDC signing token.
+  # No id_tokens: the artifact's tests run here and cannot sign.
   script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends python3-venv >/dev/null
+    - *subject
     - |
-      set -euo pipefail
-      apt-get update -qq && apt-get install -y -qq --no-install-recommends python3-venv python3-pip git >/dev/null
-      python3 -m venv "$CI_PROJECT_DIR/.workrr-py"
-      export PATH="$CI_PROJECT_DIR/.workrr-py/bin:$PATH"
-      git clone --quiet "$CERTIFIER_REPO" .workrr-certifier || git clone --quiet "https://github.com/workrr-trust/certify.git" .workrr-certifier
-      git -C .workrr-certifier checkout --quiet "$CERTIFIER_SHA"
-      (cd .workrr-certifier && npm ci --ignore-scripts && npm run build)
-      rm -rf "$CI_PROJECT_DIR/.workrr-certifier-build"
-      mv .workrr-certifier "$CI_PROJECT_DIR/.workrr-certifier-build"
-      git checkout -- . 2>/dev/null || true
-      SUBJECT_ROOT="."
-      if [ -n "$WORKRR_REPO" ]; then
-        git clone --quiet "$WORKRR_REPO" "$CI_PROJECT_DIR/subject"
-        if [ -n "$WORKRR_COMMIT" ]; then
-          git -C "$CI_PROJECT_DIR/subject" checkout --quiet "$WORKRR_COMMIT"
-        fi
-        SUBJECT_ROOT="$CI_PROJECT_DIR/subject"
-      fi
-      node "$CI_PROJECT_DIR/.workrr-certifier-build/dist/cli.js" test "$SUBJECT_ROOT/$WORKRR_PATH" --out tests.json || true
-      rm -rf "$CI_PROJECT_DIR/.workrr-py" "$CI_PROJECT_DIR/.workrr-certifier-build" "$CI_PROJECT_DIR/subject"
+      python3 -m venv /tmp/workrr-py
+      export PATH="/tmp/workrr-py/bin:$PATH" VIRTUAL_ENV=/tmp/workrr-py
+      # A failing suite still produces a report; certify decides.
+      node dist/cli.js test "subject/$WORKRR_PATH" --out tests.json || true
   artifacts:
-    name: workrr-tests-report
     paths:
       - tests.json
-    when: always
+    expire_in: 1 day
 
 workrr-certify:
   stage: certify
-  image: node:24-bookworm
   needs:
-    - job: workrr-resolve
-      artifacts: true
     - job: workrr-test
       artifacts: true
-  rules:
-    - if: '$WORKRR_PATH != "" && $WORKRR_PATH != null'
   id_tokens:
     SIGSTORE_ID_TOKEN:
       aud: sigstore
   script:
+    - *subject
     - |
-      set -euo pipefail
-      CERT_DIR="$(mktemp -d)"
-      git clone --quiet "$CERTIFIER_REPO" "$CERT_DIR" || git clone --quiet "https://github.com/workrr-trust/certify.git" "$CERT_DIR"
-      git -C "$CERT_DIR" checkout --quiet "$CERTIFIER_SHA"
-      (cd "$CERT_DIR" && npm ci --ignore-scripts && npm run build)
-      SUBJECT_ROOT="."
-      if [ -n "$WORKRR_REPO" ]; then
-        git clone --quiet "$WORKRR_REPO" "$CI_PROJECT_DIR/subject"
-        if [ -n "$WORKRR_COMMIT" ]; then
-          git -C "$CI_PROJECT_DIR/subject" checkout --quiet "$WORKRR_COMMIT"
-        fi
-        SUBJECT_ROOT="$CI_PROJECT_DIR/subject"
-      fi
-      args=("$SUBJECT_ROOT/$WORKRR_PATH" --tests-report tests.json --predicate-out predicate.json --statement-out statement.json)
-      if [ -n "$WORKRR_POLICY" ]; then
-        args+=(--policy "$SUBJECT_ROOT/$WORKRR_POLICY")
-      fi
-      node "$CERT_DIR/dist/cli.js" certify "${args[@]}"
+      node dist/cli.js certify "subject/$WORKRR_PATH" --witness "$WORKRR_REPO" --tests-report tests.json \
+        --predicate-out predicate.json --statement-out statement.json
       mkdir -p certificate
-      node "$CERT_DIR/scripts/gitlab-sign.mjs" --statement statement.json --out certificate/certificate.sigstore.json
+      node scripts/gitlab-sign.mjs --statement statement.json --out certificate/certificate.sigstore.json
       cp statement.json certificate/statement.json
-      rm -rf "$CERT_DIR" "$CI_PROJECT_DIR/subject"
   artifacts:
-    name: workrr-certificate
     paths:
       - certificate/

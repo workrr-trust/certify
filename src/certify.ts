@@ -56,6 +56,9 @@ export type CertifyOptions = {
   // Public scan (docs/public-scans.md): the repository URL being observed. The
   // artifact's tests never run and the level is "scanned".
   observe?: string;
+  // GitLab witness (docs/gitlab-certifier.md): the repository URL of a checkout made
+  // outside that repository's own CI. Tests count; the level is silver or banded.
+  witness?: string;
 };
 
 // Deterministic intrinsic A–E rubric for Banded artifacts (spec §4):
@@ -84,7 +87,7 @@ export function computeTrustBand(artifact: Artifact, policy: Policy, scan: ScanR
 
 export async function certify(path: string, opts: CertifyOptions = {}): Promise<CertifyOutcome> {
   const artifact = await loadArtifact(path);
-  const { source, check: provenance } = await checkProvenance(path, opts.observe);
+  const { source, check: provenance } = await checkProvenance(path, opts.observe ?? opts.witness);
   const policy = checkPolicy(artifact, opts.policy);
   const scan = await scanArtifact(artifact, opts.policy?.scanExceptions);
 

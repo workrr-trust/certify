@@ -22,6 +22,7 @@ Usage:
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
                         [--observe https://github.com/<owner>/<repo> [--finding-out finding.json]]
+                        [--witness https://github.com/<owner>/<repo>]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
                         [--source <repo>] [--offline] [--private] [--json]
                         [--trusted-root trusted_root.json] [--anchor-receipt receipt.json]
@@ -38,6 +39,9 @@ Usage:
            checkout: tests never run (docs/public-scans.md). With
            --finding-out, a scan that fails a security check writes a finding
            statement to sign instead (docs/findings.md).
+           --witness names that repository as the source of a checkout made
+           elsewhere (the GitLab witness, docs/gitlab-certifier.md); tests
+           still count.
   verify   Checks the artifact digest, Sigstore signature, Rekor inclusion,
            certifier identity, and revocation. Reports the policy name and digest.
            A policy that is not the baseline does not verify at a baseline level.
@@ -74,7 +78,7 @@ type args struct {
 
 var observeRe = regexp.MustCompile(`^https://github\.com/[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$`)
 
-var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "anchor-receipt": true, "min-level": true, "certificates-dir": true, "source": true, "observe": true, "finding-out": true}
+var stringOpts = map[string]bool{"out": true, "policy": true, "tests-report": true, "statement-out": true, "predicate-out": true, "bundle": true, "trust-policy": true, "trusted-root": true, "anchor-receipt": true, "min-level": true, "certificates-dir": true, "source": true, "observe": true, "witness": true, "finding-out": true}
 var boolOpts = map[string]bool{"run-tests": true, "private": true, "json": true, "offline": true}
 
 // parseArgs follows node:util parseArgs in strict mode: --name value,
@@ -212,6 +216,15 @@ func run(argv []string) (int, error) {
 				return 0, fmt.Errorf("--observe never runs tests; drop --tests-report / --run-tests")
 			}
 			opts.Observe = o
+		}
+		if w := a.strings["witness"]; w != "" {
+			if !observeRe.MatchString(w) {
+				return 0, fmt.Errorf("--witness must be https://github.com/<owner>/<repo>")
+			}
+			if opts.Observe != "" {
+				return 0, fmt.Errorf("use --observe or --witness, not both")
+			}
+			opts.Witness = w
 		}
 		if p := a.strings["tests-report"]; p != "" {
 			b, err := os.ReadFile(p)

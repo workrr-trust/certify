@@ -207,18 +207,18 @@
         "accepted": false
       },
       {
-        "id": "gitlab-certifier",
-        "san": "https://gitlab.com/workrr-trust/certify-gitlab/.gitlab-ci.yml@refs/tags/v0.1.0",
+        "id": "gitlab-witness-newest-tag",
+        "san": "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.7",
         "issuer": "https://gitlab.com",
-        "buildSignerDigest": "9fbe3e453cbd80bef0301f08db79408bb12c7d64",
+        "buildSignerDigest": "1234567890123456789012345678901234567890",
         "accepted": true
       },
       {
-        "id": "gitlab-certifier-double-slash-v0.1.1",
-        "san": "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.1",
+        "id": "gitlab-witness-unreleased-tag",
+        "san": "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.0",
         "issuer": "https://gitlab.com",
-        "buildSignerDigest": "78d8c1a98c929b7b1c1b532c25256582a84887b1",
-        "accepted": true
+        "buildSignerDigest": "9fbe3e453cbd80bef0301f08db79408bb12c7d64",
+        "accepted": false
       },
       {
         "id": "gitlab-main-branch-signer",
@@ -228,10 +228,10 @@
         "accepted": false
       },
       {
-        "id": "gitlab-peeled-commit",
-        "san": "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.0",
+        "id": "gitlab-ledger-mirror",
+        "san": "https://gitlab.com/workrr-trust/ledger//mirror/gitlab-ci.yml@refs/tags/v0.1.7",
         "issuer": "https://gitlab.com",
-        "buildSignerDigest": "edf382958dd7ce070db0ed13af1cc8c31a150901",
+        "buildSignerDigest": "1234567890123456789012345678901234567890",
         "accepted": false
       }
     ],

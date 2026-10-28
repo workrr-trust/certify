@@ -23,6 +23,7 @@ import {
   computeAnchorHashes,
   deriveStatementLevel,
   evaluateGoldBundles,
+  checkWitnessSigner,
   verifyAnchorReceipt,
   verifyBundle,
 } from "../dist/verify.js";
@@ -461,6 +462,49 @@ test("Gold requires GitHub and GitLab Silver for the same digest, commit, path, 
   const checkMismatch = evaluateGoldBundles([gh, glDiffChecks], []);
   assert.equal(checkMismatch.level, "silver");
   assert.ok(checkMismatch.notes.includes("two forges signed, but their check results differ — not Gold"));
+});
+
+test("the GitLab witness makes a publisher's GitHub silver gold, and alone is scanned", () => {
+  const checks = {
+    provenance: { result: "pass", unchangedFromCommit: true },
+    policy: { result: "pass", policyName: "workrr-baseline-v0.1", policyDigest: baselinePolicyDigest(), violations: [] },
+    scan: { result: "pass", rulesetVersion: "workrr-scan-v0.2", rulesetDigest: `sha256:${"0".repeat(64)}`, findings: [] },
+    tests: { result: "pass", command: "node check.cjs", exitCode: 0 },
+  };
+  const statement = (over = {}) => ({
+    _type: "https://in-toto.io/Statement/v1",
+    subject: [{ name: "csv-summary", digest: { sha256: "f".repeat(64) } }],
+    predicateType: "https://trust.workrr.ai/certificate/v0.1",
+    predicate: {
+      source: { uri: "https://github.com/workrr-trust/sample-skills", commit: "a".repeat(40), path: "skills/csv-summary" },
+      checks,
+      level: "silver",
+      ...over,
+    },
+  });
+  const gh = { bundlePath: "gh.json", ok: true, forge: "github", statement: statement() };
+  const witness = { bundlePath: "gl.json", ok: true, forge: "gitlab", witness: true, statement: statement() };
+
+  assert.equal(evaluateGoldBundles([gh, witness], []).level, "gold");
+  assert.equal(evaluateGoldBundles([witness], []).level, "scanned");
+  // A different repository with the same commit and path is not agreement.
+  const other = { ...witness, statement: statement({ source: { uri: "https://github.com/someone/sample-skills", commit: "a".repeat(40), path: "skills/csv-summary" } }) };
+  assert.equal(evaluateGoldBundles([gh, other], []).level, "silver");
+  // Two GitHub certificates are one forge.
+  assert.equal(evaluateGoldBundles([gh, { ...witness, forge: "github" }], []).level, "silver");
+  // A banded publisher is not raised by a witness.
+  const banded = { ...gh, statement: statement({ level: "banded", checks: { ...checks, tests: { result: "none" } } }) };
+  assert.equal(evaluateGoldBundles([banded, witness], []).level, "banded");
+
+  const repo = { sourceRepositoryURI: "https://gitlab.com/workrr-trust/certify-gitlab" };
+  assert.equal(checkWitnessSigner(statement(), repo), undefined);
+  assert.match(checkWitnessSigner(statement(), { sourceRepositoryURI: "https://gitlab.com/someone/certify-gitlab" }), /outside/);
+  assert.match(checkWitnessSigner(statement(), {}), /outside/);
+  assert.match(checkWitnessSigner(statement({ level: "gold" }), repo), /claims level gold/);
+  assert.match(
+    checkWitnessSigner(statement({ source: { uri: "https://github.com/workrr-trust/sample-skills", commit: "main", path: "skills/csv-summary" } }), repo),
+    /full SHA/,
+  );
 });
 
 test("derives level from signed checks and cross-checks source repo and commit", () => {

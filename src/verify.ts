@@ -8,7 +8,7 @@ import { normalizeRepoUri } from "./checks/provenance.js";
 import { canonicalJson, digestArtifact, jsonDigest, sha256Hex } from "./digest.js";
 import { baselineRejected, OFFLINE_WARNING, revocationError, type RevocationEntry } from "./trust-feed.js";
 import { levelName } from "./levels.js";
-import { DEFAULT_TRUST_POLICY, OBSERVER_REPOSITORY, type AcceptedSigner, type Forge, type TrustPolicy } from "./trust-policy.js";
+import { DEFAULT_TRUST_POLICY, OBSERVER_REPOSITORY, WITNESS_REPOSITORY, type AcceptedSigner, type Forge, type TrustPolicy } from "./trust-policy.js";
 
 const OID_BUILD_SIGNER_DIGEST = "1.3.6.1.4.1.57264.1.10";
 const OID_SOURCE_REPOSITORY_URI = "1.3.6.1.4.1.57264.1.12";
@@ -35,6 +35,8 @@ export type BundleResult = {
   signerIdentity?: string;
   // Set when an observer signer (a public scan) issued it: level "scanned" at most.
   observer?: boolean;
+  // Set when the GitLab witness issued it: "scanned" alone, gold with a publisher.
+  witness?: boolean;
   statement?: Statement;
   privateSigning?: boolean;
   anchorHashes?: AnchorHashes;
@@ -172,6 +174,22 @@ export function checkObserverSigner(
   return undefined;
 }
 
+// A witness signer must run in WITNESS_REPOSITORY. Its predicate names the public
+// repository it read, so Fulcio's source is the witness project, not the artifact's.
+export function checkWitnessSigner(
+  statement: Statement | undefined,
+  signer: { sourceRepositoryURI?: string },
+): string | undefined {
+  const p = statement?.predicate;
+  if (!p?.source) return "statement has no source field";
+  if (!signer.sourceRepositoryURI || canonicalSource(signer.sourceRepositoryURI) !== canonicalSource(WITNESS_REPOSITORY)) {
+    return `witness certificate signed outside ${WITNESS_REPOSITORY}: ${signer.sourceRepositoryURI ?? "(no source repository)"}`;
+  }
+  if (!/^[0-9a-f]{40}$/i.test(p.source.commit)) return "witness certificate source commit is not a full SHA";
+  if (p.level !== "silver" && p.level !== "banded") return `witness certificate claims level ${p.level}`;
+  return undefined;
+}
+
 export function matchDescribedSigner(
   policy: TrustPolicy,
   signer: { san: string; issuer?: string; buildSignerDigest?: string },
@@ -254,11 +272,13 @@ export function evaluateGoldBundles(
   notes: string[],
 ): { level?: VerifyResult["level"]; notes: string[] } {
   const outNotes = [...notes];
-  // A public scan never adds to a publisher's level; it stands alone only when no
-  // publisher certificate verifies.
-  const publisher = valid.filter((b) => !b.observer);
+  // A public scan never adds to a publisher's level, and a witness adds only gold;
+  // either stands alone as "scanned" when no publisher certificate verifies.
+  const publisher = valid.filter((b) => !b.observer && !b.witness);
   if (publisher.length === 0) {
-    const scanned = valid.some((b) => deriveStatementLevel(b.statement) === "banded");
+    const scanned = valid.some(
+      (b) => deriveStatementLevel(b.statement) === "banded" || (b.witness && deriveStatementLevel(b.statement) === "silver"),
+    );
     return scanned ? { level: "scanned", notes: outNotes } : { notes: outNotes };
   }
   const withLevels = publisher
@@ -267,22 +287,24 @@ export function evaluateGoldBundles(
   if (withLevels.length === 0) return { notes: outNotes };
 
   const silver = withLevels.filter((x) => x.level === "silver").map((x) => x.bundle);
-  const forges = new Set(silver.map((b) => b.forge));
   let level: VerifyResult["level"] = silver.length > 0 ? "silver" : "banded";
-  if (forges.size >= 2) {
-    const [a, b] = [silver.find((x) => x.forge === "github"), silver.find((x) => x.forge === "gitlab")];
-    if (a?.statement && b?.statement) {
-      const sameCommit =
-        a.statement.predicate.source.commit.toLowerCase() === b.statement.predicate.source.commit.toLowerCase() &&
-        a.statement.predicate.source.path === b.statement.predicate.source.path;
-      const sameChecks = canonicalJson(a.statement.predicate.checks) === canonicalJson(b.statement.predicate.checks);
-      if (!sameCommit) {
-        outNotes.push("two forges signed, but their source commits differ — not Gold");
-      } else if (!sameChecks) {
-        outNotes.push("two forges signed, but their check results differ — not Gold");
-      } else {
-        level = "gold";
-      }
+  // Gold: a publisher's silver on GitHub and a silver on GitLab (the witness, or the
+  // publisher's own) for the same repository, commit, path and checks.
+  const witnesses = valid.filter((b) => b.witness && deriveStatementLevel(b.statement) === "silver");
+  const a = silver.find((x) => x.forge === "github");
+  const b = [...silver, ...witnesses].find((x) => x.forge === "gitlab");
+  if (a?.statement && b?.statement) {
+    const sameCommit =
+      publisherKey(a.statement.predicate.source.uri) === publisherKey(b.statement.predicate.source.uri) &&
+      a.statement.predicate.source.commit.toLowerCase() === b.statement.predicate.source.commit.toLowerCase() &&
+      a.statement.predicate.source.path === b.statement.predicate.source.path;
+    const sameChecks = canonicalJson(a.statement.predicate.checks) === canonicalJson(b.statement.predicate.checks);
+    if (!sameCommit) {
+      outNotes.push("two forges signed, but their source commits differ — not Gold");
+    } else if (!sameChecks) {
+      outNotes.push("two forges signed, but their check results differ — not Gold");
+    } else {
+      level = "gold";
     }
   }
   return { level, notes: outNotes };
@@ -492,9 +514,12 @@ export async function verifyBundle(
     }));
   }
   const observer = accepted.role === "observer";
+  const witness = accepted.role === "witness";
   const sourceMismatch = observer
     ? checkObserverSigner(statement, described)
-    : statement.predicate?.level === "scanned"
+    : witness
+      ? checkWitnessSigner(statement, described)
+      : statement.predicate?.level === "scanned"
       ? "certificate claims level scanned, but its signer is a publisher certifier"
       : checkCertificateSourceAndCommit(statement, described);
   if (sourceMismatch) {
@@ -531,6 +556,7 @@ export async function verifyBundle(
     forge: accepted.forge,
     signerIdentity: identity.subjectAlternativeName,
     ...(observer ? { observer: true } : {}),
+    ...(witness ? { witness: true } : {}),
     statement,
     ...(options.privateMode ? { privateSigning, anchorHashes } : {}),
   });

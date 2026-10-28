@@ -46,6 +46,8 @@ type BundleResult struct {
 	SignerIdentity string `json:"signerIdentity,omitempty"`
 	// Observer is set when an observer signer (a public scan) issued it.
 	Observer bool `json:"observer,omitempty"`
+	// Witness is set when the GitLab witness issued it: "scanned" alone, gold with a publisher.
+	Witness bool `json:"witness,omitempty"`
 	// Statement is the attestation payload exactly as signed (generic JSON).
 	Statement      any           `json:"statement,omitempty"`
 	PrivateSigning *bool         `json:"privateSigning,omitempty"`
@@ -202,6 +204,12 @@ func DeriveStatementLevel(statement any) string {
 	}
 }
 
+func predicateSourceURI(statement any) string {
+	src, _ := predicateField(statement, "source").(map[string]any)
+	uri, _ := src["uri"].(string)
+	return uri
+}
+
 func predicateCommitAndPath(statement any) (commit, path string) {
 	src, _ := predicateField(statement, "source").(map[string]any)
 	commit, _ = src["commit"].(string)
@@ -211,14 +219,21 @@ func predicateCommitAndPath(statement any) (commit, path string) {
 
 func EvaluateGoldBundles(valid []BundleResult, notes []string) (level string, outNotes []string) {
 	outNotes = append([]string{}, notes...)
-	// A public scan never adds to a publisher's level; it stands alone only when no
-	// publisher certificate verifies.
-	var publisher []BundleResult
+	// A public scan never adds to a publisher's level, and a witness adds only gold;
+	// either stands alone as "scanned" when no publisher certificate verifies.
+	var publisher, witnesses []BundleResult
 	scanned := false
 	for _, b := range valid {
-		if b.Observer {
+		switch {
+		case b.Observer:
 			scanned = scanned || DeriveStatementLevel(b.Statement) == "banded"
-		} else {
+		case b.Witness:
+			lvl := DeriveStatementLevel(b.Statement)
+			scanned = scanned || lvl == "banded" || lvl == "silver"
+			if lvl == "silver" {
+				witnesses = append(witnesses, b)
+			}
+		default:
 			publisher = append(publisher, b)
 		}
 	}
@@ -231,7 +246,6 @@ func EvaluateGoldBundles(valid []BundleResult, notes []string) (level string, ou
 	valid = publisher
 	var silver []BundleResult
 	var anyValid bool
-	forges := map[Forge]bool{}
 	for _, b := range valid {
 		lvl := DeriveStatementLevel(b.Statement)
 		if lvl == "" {
@@ -240,7 +254,6 @@ func EvaluateGoldBundles(valid []BundleResult, notes []string) (level string, ou
 		anyValid = true
 		if lvl == "silver" {
 			silver = append(silver, b)
-			forges[b.Forge] = true
 		}
 	}
 	if !anyValid {
@@ -250,30 +263,33 @@ func EvaluateGoldBundles(valid []BundleResult, notes []string) (level string, ou
 	if len(silver) > 0 {
 		level = "silver"
 	}
-	if len(forges) >= 2 {
-		find := func(f Forge) *BundleResult {
-			for i := range silver {
-				if silver[i].Forge == f {
-					return &silver[i]
+	// Gold: a publisher's silver on GitHub and a silver on GitLab (the witness, or the
+	// publisher's own) for the same repository, commit, path and checks.
+	find := func(f Forge, sets ...[]BundleResult) *BundleResult {
+		for _, set := range sets {
+			for i := range set {
+				if set[i].Forge == f {
+					return &set[i]
 				}
 			}
-			return nil
 		}
-		a, b := find(ForgeGitHub), find(ForgeGitLab)
-		if a != nil && b != nil {
-			commitA, pathA := predicateCommitAndPath(a.Statement)
-			commitB, pathB := predicateCommitAndPath(b.Statement)
-			sameCommit := commitA != "" && commitA == commitB && pathA == pathB
-			ca, errA := CanonicalJSON(predicateField(a.Statement, "checks"))
-			cb, errB := CanonicalJSON(predicateField(b.Statement, "checks"))
-			sameChecks := errA == nil && errB == nil && ca == cb
-			if !sameCommit {
-				outNotes = append(outNotes, "two forges signed, but their source commits differ — not Gold")
-			} else if !sameChecks {
-				outNotes = append(outNotes, "two forges signed, but their check results differ — not Gold")
-			} else {
-				level = "gold"
-			}
+		return nil
+	}
+	a, b := find(ForgeGitHub, silver), find(ForgeGitLab, silver, witnesses)
+	if a != nil && b != nil {
+		commitA, pathA := predicateCommitAndPath(a.Statement)
+		commitB, pathB := predicateCommitAndPath(b.Statement)
+		uriA, uriB := predicateSourceURI(a.Statement), predicateSourceURI(b.Statement)
+		sameCommit := commitA != "" && commitA == commitB && pathA == pathB && publisherKey(uriA) == publisherKey(uriB)
+		ca, errA := CanonicalJSON(predicateField(a.Statement, "checks"))
+		cb, errB := CanonicalJSON(predicateField(b.Statement, "checks"))
+		sameChecks := errA == nil && errB == nil && ca == cb
+		if !sameCommit {
+			outNotes = append(outNotes, "two forges signed, but their source commits differ — not Gold")
+		} else if !sameChecks {
+			outNotes = append(outNotes, "two forges signed, but their check results differ — not Gold")
+		} else {
+			level = "gold"
 		}
 	}
 	return level, outNotes
@@ -550,6 +566,32 @@ func CheckObserverSigner(statement any, signer *Signer) string {
 	return ""
 }
 
+// CheckWitnessSigner: a witness signer must run in WitnessRepository. Its predicate
+// names the public repository it read, so Fulcio's source is the witness project,
+// not the artifact's.
+func CheckWitnessSigner(statement any, signer *Signer) string {
+	src, _ := predicateField(statement, "source").(map[string]any)
+	if src == nil {
+		return "statement has no source field"
+	}
+	if signer == nil || signer.SourceRepositoryURI == "" || canonicalSource(signer.SourceRepositoryURI) != canonicalSource(WitnessRepository) {
+		got := "(no source repository)"
+		if signer != nil && signer.SourceRepositoryURI != "" {
+			got = signer.SourceRepositoryURI
+		}
+		return "witness certificate signed outside " + WitnessRepository + ": " + got
+	}
+	if commit, _ := src["commit"].(string); !fullSHA.MatchString(commit) {
+		return "witness certificate source commit is not a full SHA"
+	}
+	if lvl, _ := predicateField(statement, "level").(string); lvl != "silver" && lvl != "banded" {
+		return "witness certificate claims level " + lvl
+	}
+	return ""
+}
+
+var fullSHA = regexp.MustCompile(`(?i)^[0-9a-f]{40}$`)
+
 func bundleLogIndexes(data []byte) []string {
 	var raw struct {
 		VerificationMaterial struct {
@@ -689,10 +731,13 @@ func VerifyBundleWithOptions(bundlePath, artifactDigest string, policy *TrustPol
 		return r
 	}
 	observer := accepted.Role == RoleObserver
+	witness := accepted.Role == RoleWitness
 	var mismatch string
 	switch {
 	case observer:
 		mismatch = CheckObserverSigner(statement, signer)
+	case witness:
+		mismatch = CheckWitnessSigner(statement, signer)
 	case predicateField(statement, "level") == "scanned":
 		mismatch = "certificate claims level scanned, but its signer is a publisher certifier"
 	default:
@@ -717,7 +762,7 @@ func VerifyBundleWithOptions(bundlePath, artifactDigest string, policy *TrustPol
 		r.SignerIdentity = signer.SAN
 		return r
 	}
-	out := BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Observer: observer, Statement: statement, LogIndexes: indexes}
+	out := BundleResult{BundlePath: bundlePath, OK: true, Forge: accepted.Forge, SignerIdentity: signer.SAN, Observer: observer, Witness: witness, Statement: statement, LogIndexes: indexes}
 	if opts.PrivateMode {
 		out.PrivateSigning = &privateSigning
 		out.AnchorHashes = &anchorHashes
