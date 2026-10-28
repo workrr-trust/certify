@@ -42,6 +42,8 @@
     "provenance": true
   },
   "dependencies": {
+    "@sigstore/bundle": "^5.0.0",
+    "@sigstore/sign": "^5.0.0",
     "sigstore": "^5.0.0",
     "yaml": "^2.9.1"
   },
