@@ -6,7 +6,7 @@
 #   jobs:
 #     workrr-org-gate:
 #       permissions: { contents: read }
-#       uses: workrr-trust/certify/.github/workflows/org-policy-gate.yml@v0.1.4
+#       uses: workrr-trust/certify/.github/workflows/org-policy-gate.yml@v0.1.5
 #       with:
 #         min-level: silver
 name: workrr-org-policy-gate

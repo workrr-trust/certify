@@ -401,7 +401,7 @@ func TestMatchSigner(t *testing.T) {
 	}
 	v014.BuildSignerDigest = "14466afa6a8bc8612292b74ae63e764590041031"
 	if MatchSigner(&DefaultTrustPolicy, v014) != nil {
-		t.Error("accepted certify.yml@v0.1.4 at the peeled commit")
+		t.Error("accepted certify.yml@v0.1.5 at the peeled commit")
 	}
 	v013 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.3", Issuer: gh.Issuer, BuildSignerDigest: "7cf13e7228c6f2bdf01b6d3ab670edef6f77fe4b"}
 	if MatchSigner(&DefaultTrustPolicy, v013) == nil {
@@ -418,11 +418,11 @@ func TestMatchSigner(t *testing.T) {
 	// scan.yml is dispatched directly: Fulcio records the tagged commit.
 	scan14 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.4", Issuer: gh.Issuer, BuildSignerDigest: "14466afa6a8bc8612292b74ae63e764590041031"}
 	if s := MatchSigner(&DefaultTrustPolicy, scan14); s == nil || s.Role != RoleObserver {
-		t.Errorf("scan.yml@v0.1.4 at its commit should be an observer, got %+v", s)
+		t.Errorf("scan.yml@v0.1.5 at its commit should be an observer, got %+v", s)
 	}
 	scan14.BuildSignerDigest = "54b6c3a8f7818d1c8edba145edbf2157c35208d9"
 	if MatchSigner(&DefaultTrustPolicy, scan14) != nil {
-		t.Error("accepted scan.yml@v0.1.4 at the tag object")
+		t.Error("accepted scan.yml@v0.1.5 at the tag object")
 	}
 	scan.SAN = "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/heads/main"
 	if MatchSigner(&DefaultTrustPolicy, scan) != nil {

@@ -39,7 +39,7 @@ on: { push: { branches: [main], tags: ["v*"] }, workflow_dispatch: {} }
 jobs:
   certify:
     permissions: { contents: read, id-token: write, attestations: write }
-    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.4
+    uses: workrr-trust/certify/.github/workflows/certify.yml@v0.1.5
     with:
       path: skills/my-skill
 ```
@@ -200,7 +200,7 @@ review. Never move a release tag.
    commit SHA.
 10. Smoke the listing from a different public repository: one step, SHA pin,
     `contents: read`, no OIDC permission. A missing bundle fails the job. A
-    certificate from `certify.yml@v0.1.4` passes at `level: silver` when
+    certificate from `certify.yml@v0.1.5` passes at `level: silver` when
     `source` is the publisher.
 
 ## Verify
