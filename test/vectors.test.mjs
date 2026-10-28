@@ -77,7 +77,7 @@ for (const source of cases.trust.sources) {
     if (source.match) {
       assert.equal(gate.ok, true);
       assert.equal(gate.level, "silver");
-      assert.equal(verificationHeadline(gate), "VERIFIED · level silver");
+      assert.equal(verificationHeadline(gate), "VERIFIED · Tested (silver)");
     } else {
       assert.equal(gate.ok, false);
       assert.equal(gate.level, undefined);

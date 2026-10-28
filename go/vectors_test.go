@@ -239,7 +239,7 @@ func TestTrustVectors(t *testing.T) {
 			}
 			gate := ApplyVerificationGates("silver", [][2]string{{BaselinePolicyName, BaselinePolicy().Digest()}}, []string{source.Certificate}, source.Flag, []string{revocation})
 			if source.Match {
-				if !gate.OK || gate.Level != "silver" || VerificationHeadline(gate.OK, gate.Level, gate.PolicyStatus, gate.Notes) != "VERIFIED · level silver" {
+				if !gate.OK || gate.Level != "silver" || VerificationHeadline(gate.OK, gate.Level, gate.PolicyStatus, gate.Notes) != "VERIFIED · Tested (silver)" {
 					t.Fatalf("gate %+v", gate)
 				}
 				return

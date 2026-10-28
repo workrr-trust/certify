@@ -2,7 +2,7 @@
 #
 # This file is verify-only. It must not sign or request an OIDC token.
 # Certificates are trusted by the Fulcio identity of
-# .github/workflows/certify.yml at released tags v0.1.0 to v0.1.4 (Build Signer
+# .github/workflows/certify.yml at released tags v0.1.0 to v0.1.5 (Build Signer
 # Digest pinned in the trust policy). A composite action runs inside the
 # caller's job, so a certificate minted here would name the caller and would
 # not verify.
@@ -39,7 +39,8 @@ inputs:
     required: true
   level:
     description: >-
-      Minimum level: scanned, banded, silver, or gold (scanned is a public scan by
+      Minimum level, least to most scrutiny: scanned, signed, tested, or reproduced
+      (wire values scanned, banded, silver, gold also work; scanned is a public scan by
       workrr, not signed by the maintainer). A higher certificate level
       satisfies a lower minimum. Defaults to silver.
     required: false
@@ -70,7 +71,7 @@ outputs:
     description: Fulcio SAN of each accepted bundle, comma-separated.
     value: ${{ steps.verify.outputs.signer }}
   headline:
-    description: VERIFIED · level <level>, NOT VERIFIED, or custom policy, not baseline.
+    description: VERIFIED · <Name> (<level>), NOT VERIFIED, or custom policy, not baseline.
     value: ${{ steps.verify.outputs.headline }}
 runs:
   using: composite

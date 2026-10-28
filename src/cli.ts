@@ -4,6 +4,8 @@ import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { loadArtifact } from "./artifact.js";
 import { certify } from "./certify.js";
+import { findingStatement, verifyFinding } from "./finding.js";
+import { levelName, parseLevel } from "./levels.js";
 import { BASELINE_POLICY, type Policy } from "./checks/policy.js";
 import { runTests, type TestsReport } from "./checks/tests.js";
 import { digestArtifact } from "./digest.js";
@@ -20,12 +22,13 @@ Usage:
   workrr test    <path> [--out tests.json]
   workrr certify <path> [--policy policy.json] [--tests-report tests.json | --run-tests]
                         [--statement-out statement.json] [--predicate-out predicate.json]
-                        [--observe https://github.com/<owner>/<repo>]
+                        [--observe https://github.com/<owner>/<repo> [--finding-out finding.json]]
   workrr verify  <path> --bundle <file> [--bundle <file>] [--trust-policy policy.json]
                         [--source <repo>] [--offline] [--private] [--json]
                         [--trusted-root trusted_root.json] [--anchor-receipt receipt.json]
+  workrr verify-finding <path> --bundle <file> [--trust-policy policy.json] [--json]
   workrr anchor  <path> --bundle <file> [--out anchor-request.json]
-  workrr gate    <repo-dir> [--min-level scanned|banded|silver|gold] [--policy policy.json]
+  workrr gate    <repo-dir> [--min-level scanned|signed|tested|reproduced] [--policy policy.json]
                             [--certificates-dir <dir>] [--source <repo>] [--json]
 
   test     Runs the artifact's declared suite (workrr.json). Runs artifact code:
@@ -33,7 +36,9 @@ Usage:
   certify  Runs provenance, policy and scan checks; exits 1 if any check fails.
            In GitHub Actions also writes subject-name / subject-digest outputs.
            --observe makes a public scan (level scanned) of that repository's
-           checkout: tests never run (docs/public-scans.md).
+           checkout: tests never run (docs/public-scans.md). With
+           --finding-out, a scan that fails a security check writes a finding
+           statement to sign instead (docs/findings.md).
   verify   Checks the artifact digest, Sigstore signature, Rekor inclusion,
            certifier identity, and revocation. Reports the policy name and digest.
            A policy that is not the baseline does not verify at a baseline level.
@@ -50,6 +55,12 @@ Usage:
            {version, signers} file is a local override and its signature is not checked.
            --private accepts private-tier TSA attestations and optional hash-only
            anchor receipts (--anchor-receipt).
+  verify-finding
+           Verifies a signed finding from a public scan (signature, Rekor,
+           observer signer), then reproduces it: re-runs the checks on <path>
+           (a checkout of the commit it names) and requires the same failures.
+  Levels, least to most scrutiny: Scanned, Signed, Tested, Reproduced (wire
+  values scanned, banded, silver, gold). Either name works for --min-level.
   anchor   Computes the hash-only public anchor request payload for a private bundle.
   gate     Org policy gate: discovers all skills in <repo-dir> and exits 1 if
            any skill is uncertified, fails policy/scan, or is below --min-level.
@@ -78,6 +89,7 @@ async function main(argv: string[]): Promise<number> {
       "tests-report": { type: "string" },
       "run-tests": { type: "boolean" },
       observe: { type: "string" },
+      "finding-out": { type: "string" },
       "statement-out": { type: "string" },
       "predicate-out": { type: "string" },
       bundle: { type: "string", multiple: true },
@@ -117,6 +129,7 @@ async function main(argv: string[]): Promise<number> {
       if (observe !== undefined && !/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/.test(observe)) {
         throw new Error("--observe must be https://github.com/<owner>/<repo>");
       }
+      if (values["finding-out"] && observe === undefined) throw new Error("--finding-out needs --observe");
       if (observe !== undefined && (testsReport || values["run-tests"])) {
         throw new Error("--observe never runs tests; drop --tests-report / --run-tests");
       }
@@ -134,7 +147,7 @@ async function main(argv: string[]): Promise<number> {
           `scan       ${c.scan.result} (${c.scan.findings.length} finding(s), ${c.scan.rulesetVersion})`,
           `tests      ${c.tests.result}`,
           outcome.certified
-            ? `level      ${p.level}${p.band ? ` (band ${p.band})` : ""}`
+            ? `level      ${levelName(p.level)} (${p.level})${p.band ? `, band ${p.band}` : ""}`
             : `NOT CERTIFIED:\n  - ${outcome.failures.join("\n  - ")}`,
           "",
         ].join("\n"),
@@ -144,10 +157,15 @@ async function main(argv: string[]): Promise<number> {
       }
       if (values["statement-out"]) await writeFile(values["statement-out"], JSON.stringify(statement, null, 2) + "\n");
       if (values["predicate-out"]) await writeFile(values["predicate-out"], JSON.stringify(p, null, 2) + "\n");
+      const finding = values["finding-out"] ? findingStatement(outcome) : undefined;
+      if (finding) {
+        await writeFile(values["finding-out"]!, JSON.stringify(finding.predicate, null, 2) + "\n");
+        process.stderr.write(`finding    ${finding.predicate.kind}: ${finding.predicate.findings.map((f) => f.detail + (f.file ? ` ${f.file}${f.line ? `:${f.line}` : ""}` : "")).join("; ")}\n`);
+      }
       if (process.env.GITHUB_OUTPUT) {
         await appendFile(
           process.env.GITHUB_OUTPUT,
-          `certified=${outcome.certified}\nsubject-name=${statement.subject[0].name}\nsubject-digest=sha256:${statement.subject[0].digest.sha256}\nlevel=${p.level}\nband=${p.band ?? ""}\n`,
+          `finding=${finding ? finding.predicate.kind : ""}\ncertified=${outcome.certified}\nsubject-name=${statement.subject[0].name}\nsubject-digest=sha256:${statement.subject[0].digest.sha256}\nlevel=${p.level}\nband=${p.band ?? ""}\n`,
         );
       }
       return outcome.certified ? 0 : 1;
@@ -218,10 +236,8 @@ async function main(argv: string[]): Promise<number> {
       return result.ok ? 0 : 1;
     }
     case "gate": {
-      const minLevel = (values["min-level"] as GateLevel | undefined) ?? "silver";
-      if (!["scanned", "banded", "silver", "gold"].includes(minLevel)) {
-        throw new Error("--min-level must be scanned, banded, silver, or gold");
-      }
+      const minLevel: GateLevel | undefined = values["min-level"] ? parseLevel(values["min-level"]) : "silver";
+      if (!minLevel) throw new Error("--min-level must be scanned, signed, tested, or reproduced");
       const requiredPolicy = values.policy ? await readJson<Policy>(values.policy) : BASELINE_POLICY;
       const trustPolicy = values["trust-policy"] ? await readJson<TrustPolicy>(values["trust-policy"]) : DEFAULT_TRUST_POLICY;
       const result = await runOrgPolicyGate(path, {
@@ -239,7 +255,7 @@ async function main(argv: string[]): Promise<number> {
         );
         for (const s of result.skills) {
           if (s.ok) {
-            process.stdout.write(`  ✓ ${s.path} (${s.name}) — level ${s.level}\n`);
+            process.stdout.write(`  ✓ ${s.path} (${s.name}) — ${levelName(s.level)} (${s.level})\n`);
           } else {
             process.stdout.write(`  ✗ ${s.path} (${s.name}) — ${s.reasons.join("; ")}\n`);
           }
@@ -247,6 +263,23 @@ async function main(argv: string[]): Promise<number> {
         process.stdout.write(result.ok ? "ORG GATE PASSED\n" : "ORG GATE FAILED\n");
       }
       return result.ok ? 0 : 1;
+    }
+    case "verify-finding": {
+      if (values.bundle?.length !== 1) throw new Error("verify-finding needs exactly one --bundle");
+      const loaded = await loadTrustPolicy({ offline: values.offline, file: values["trust-policy"] });
+      if (loaded.status !== "ok") throw new Error(`trust policy: ${loaded.warnings.join("; ") || loaded.status}`);
+      const r = await verifyFinding(path, values.bundle[0], loaded.policy, { trustedRootPath: values["trusted-root"] });
+      if (values.json) {
+        process.stdout.write(JSON.stringify(r, null, 2) + "\n");
+      } else {
+        process.stdout.write(`artifact sha256:${r.artifactDigest}\n`);
+        if (r.source) process.stdout.write(`  source ${r.source}@${(r.commit ?? "").slice(0, 12)} ${r.path ?? ""}\n`);
+        for (const f of r.findings ?? []) {
+          process.stdout.write(`  ${f.detail}${f.file ? ` ${f.file}${f.line ? `:${f.line}` : ""}` : ""}\n`);
+        }
+        process.stdout.write(r.ok ? `FINDING REPRODUCED · ${r.kind}\n` : `NOT REPRODUCED: ${r.error}\n`);
+      }
+      return r.ok ? 0 : 1;
     }
     case "anchor": {
       if (!values.bundle?.length) throw new Error("anchor needs --bundle <file>");

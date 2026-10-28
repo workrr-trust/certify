@@ -311,7 +311,7 @@ echo "exit=$?"
 - a `✓` line for the bundle naming forge `github` and the certifier SAN
 - a `publisher` line for that repository
 - a `policy workrr-baseline-v0.1 sha256:…` line
-- headline `VERIFIED · level silver` or `VERIFIED · level banded` (banded when that certificate recorded no test suite)
+- headline `VERIFIED · Tested (silver)` or `VERIFIED · Signed (banded)` (banded when that certificate recorded no test suite)
 - no note `revocation was not checked`
 - no note `offline:`
 - no note `trust policy fetch failed`
@@ -331,7 +331,7 @@ echo "exit=$?"
 Expected:
 
 - exit `0` for the same baseline certificate
-- the same `VERIFIED · level …` headline
+- the same `VERIFIED · <Name> (<level>)` headline
 - this note, exactly:
 
 ```text
@@ -376,7 +376,7 @@ trust policy fetch failed; using the embedded trust policy
 revocation was not checked
 ```
 
-The headline is still `VERIFIED · level …` for a baseline certificate signed by `v0.1.0` or `v0.1.1`. Exit `0`. The embedded policy is that same trust set.
+The headline is still `VERIFIED · <Name> (<level>)` for a baseline certificate signed by `v0.1.0` or `v0.1.1`. Exit `0`. The embedded policy is that same trust set.
 
 A cache younger than one hour is reused without fetching the policy again. The feed is still fetched. If only the feed fails, the note is:
 

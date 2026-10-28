@@ -3,7 +3,7 @@
 #
 # This script does not certify. A composite action runs inside the caller's
 # job, so Fulcio would record the caller's workflow. The trust policy accepts
-# only certify.yml at released tags (v0.1.0 to v0.1.4). Signing here would not verify.
+# only certify.yml at released tags (v0.1.0 to v0.1.5). Signing here would not verify.
 #
 # The OIDC request variables are cleared before install and before verify, so
 # this step cannot mint a GitHub token even when the job has one. Dependencies
