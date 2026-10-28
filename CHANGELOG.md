@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.6 (2026-10-28)
+
+Fewer false findings. The first public backfill flagged wording that is not
+concealment; this release narrows the rules that misfired. Every finding v0.1.5
+signed stays in Rekor and the ledger; the targets it flagged are re-scanned at
+this release, and the newest result is what listings show.
+
+- **Ruleset `workrr-scan-v0.2`** (new ruleset digest):
+  - WT007 matches "do not / don't / never tell (or inform) the user about / that
+    …" and "… mention / reveal / disclose … to the user". It no longer matches
+    "don't tell the user *to* do something", "what / whether" or "show". A match
+    right after a quote mark is an example being discussed, not an instruction.
+  - WT008 needs a specific phrase in the hidden comment: instruction-override
+    wording, "you are now", "exfiltrate", or "don't tell the user". The v0.1 words
+    `ignore`, `instruction`, `you are`, `assistant` and `system prompt` matched
+    `prettier-ignore`, template notes and diagram labels.
+  - WT001, WT007 and WT008 skip tests, fixtures and snapshots. Shell, credential
+    and character rules (WT002–WT006) do not.
+- **Finding kind**: `concealment` now means WT002 or WT003 outside tests and
+  fixtures. WT007 and WT008 findings are `check` (they get the fix window).
+- Shared rule cases (`test/fixtures/scan-rule-cases.json`), taken from wording
+  v0.1 matched in public repositories, run in both the TypeScript and Go tests.
+- Trust policy: pin v0.1.5: `certify.yml` to its tag object
+  `ab877ee7bc33604f1d1b95d7e1377f340fd5d476`, and `scan.yml` to the tagged commit
+  `5fb6a6635f5cee1f8fe51cfa27fa997298d2faf3`. Accept this release by exact tag
+  until v0.1.7 pins it.
+- `watch.yml` dispatches `scan.yml` at v0.1.6.
+
 ## 0.1.5 (2026-10-28)
 
 - **Signed findings** ([docs/findings.md](docs/findings.md)): a public scan that

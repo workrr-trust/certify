@@ -6,6 +6,7 @@
 import { readFile } from "node:fs/promises";
 import { verify as sigstoreVerify } from "sigstore";
 import { certify, detectRuntime, STATEMENT_TYPE, type Checks, type CertifyOutcome, type Predicate } from "./certify.js";
+import { TEST_PATH } from "./checks/scan.js";
 import { canonicalJson, digestArtifact } from "./digest.js";
 import { DEFAULT_TRUST_POLICY, OBSERVER_REPOSITORY, type TrustPolicy } from "./trust-policy.js";
 import { VERSION } from "./version.js";
@@ -13,10 +14,15 @@ import { bundleLogIndexes, canonicalSource, describeSigner, matchDescribedSigner
 
 export const FINDING_PREDICATE_TYPE = "https://trust.workrr.ai/finding/v0.1";
 
-// Rules whose matches are rarely accidental: invisible tag characters, bidi
-// overrides, instructions to hide things from the user, and instructions in
-// hidden HTML comments. A finding with any of these is kind "concealment".
-export const CONCEALMENT_RULES = ["WT002", "WT003", "WT007", "WT008"];
+// Rules whose matches are rarely accidental: invisible Unicode tag characters and
+// bidirectional overrides. A finding with either, outside tests and fixtures (where
+// sanitizers keep their samples), is kind "concealment". Phrase rules (WT007,
+// WT008) match innocent wording too often to be called that.
+export const CONCEALMENT_RULES = ["WT002", "WT003"];
+
+export function isConcealment(items: FindingItem[]): boolean {
+  return items.some((i) => i.rule && CONCEALMENT_RULES.includes(i.rule) && !TEST_PATH.test(i.file ?? ""));
+}
 
 export type FindingItem = {
   check: "scan" | "policy";
@@ -77,7 +83,7 @@ export function findingStatement(outcome: CertifyOutcome): FindingStatement | un
       artifact: p.artifact,
       source: p.source,
       checks: p.checks,
-      kind: items.some((i) => i.rule && CONCEALMENT_RULES.includes(i.rule)) ? "concealment" : "check",
+      kind: isConcealment(items) ? "concealment" : "check",
       findings: items,
       certifier: { name: "workrr-certify", version: VERSION, runtime: detectRuntime() },
       scannedAt: p.certifiedAt,
@@ -145,12 +151,16 @@ export async function verifyFinding(
 
   // Reproduce: the same checks on the same files must fail in the same way.
   const outcome = await certify(path, { observe: p.source.uri });
-  const again = findingStatement(outcome);
-  if (!again) return fail("not reproduced: the checks pass on this checkout", facts);
+  // A different ruleset or policy can't reproduce it either way: say which certifier can.
   const c = outcome.statement.predicate.checks;
   if (c.scan.rulesetDigest !== p.checks.scan.rulesetDigest || c.policy.policyDigest !== p.checks.policy.policyDigest) {
-    return fail("cannot reproduce with this certifier: its ruleset or policy differs from the one that signed the finding", facts);
+    return fail(
+      `cannot reproduce with this certifier: its ruleset or policy differs from the one that signed the finding (use certify ${p.certifier.version})`,
+      facts,
+    );
   }
+  const again = findingStatement(outcome);
+  if (!again) return fail("not reproduced: the checks pass on this checkout", facts);
   if (canonicalJson(again.predicate.findings) !== canonicalJson(p.findings) || again.predicate.kind !== p.kind) {
     return fail("not reproduced: the checks fail differently on this checkout", facts);
   }

@@ -42,12 +42,20 @@ A finding is made only for security-relevant failures:
 Layout problems (missing frontmatter, an oversized folder) make an artifact
 uncertifiable but are not findings, and nothing is signed for them.
 
-**Kind.** A finding is `concealment` when any failing rule is one that is rarely
-accidental: Unicode tag characters (WT002), bidirectional overrides (WT003),
-instructions to hide things from the user (WT007), or instructions in hidden
-HTML comments (WT008). Everything else is `check`. Listings show concealment
-findings at once. A `check` finding gets a short fix window before a listing
-ranks it as Flagged.
+**Kind.** A finding is `concealment` when a failing rule is one whose matches
+are rarely accidental: Unicode tag characters (WT002) or bidirectional overrides
+(WT003), in a file that is not a test or fixture (sanitizers keep such characters
+in their tests on purpose). Everything else is `check`, including the phrase rules
+WT007 (instructions to keep something from the user) and WT008 (instructions in a
+hidden HTML comment): wording matches innocent text too often to be called
+concealment. Listings show concealment findings at once. A `check` finding gets a
+short fix window before a listing ranks it as Flagged.
+
+**Tests and fixtures.** The rules about text an agent reads as instructions
+(WT001, WT007, WT008) skip tests, fixtures and snapshots (`test/`, `tests/`,
+`__tests__/`, `fixtures/`, `__snapshots__/`, `test_*`, `test-*`, `*.test.*`,
+`*.spec.*`, `*.snap`, `*.snapshot`): scanners and prompt-injection defences keep
+their samples there. The shell, credential and character rules still apply.
 
 ## Format
 

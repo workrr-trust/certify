@@ -40,6 +40,8 @@ export type TrustPolicy = { version: string; signers: AcceptedSigner[] };
 //          commit 46c524bf97e8f580375edff746c847b86f4b23f9
 //   v0.1.4 tag 54b6c3a8f7818d1c8edba145edbf2157c35208d9
 //          commit 14466afa6a8bc8612292b74ae63e764590041031
+//   v0.1.5 tag ab877ee7bc33604f1d1b95d7e1377f340fd5d476
+//          commit 5fb6a6635f5cee1f8fe51cfa27fa997298d2faf3
 //
 // scan.yml is dispatched directly (workflow_dispatch), not called, so for it Fulcio
 // records the tagged COMMIT, not the tag object: scan.yml@v0.1.4 is 14466afa….
@@ -87,10 +89,16 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
       buildSignerDigests: ["54b6c3a8f7818d1c8edba145edbf2157c35208d9"],
     },
     {
-      // NEWEST: this release, by exact tag; v0.1.6 pins its digest.
       forge: "github",
       issuer: "https://token.actions.githubusercontent.com",
       subjectAlternativeName: `^${CERTIFY_SAN}v0\\.1\\.5$`,
+      buildSignerDigests: ["ab877ee7bc33604f1d1b95d7e1377f340fd5d476"],
+    },
+    {
+      // NEWEST: this release, by exact tag; v0.1.7 pins its digest.
+      forge: "github",
+      issuer: "https://token.actions.githubusercontent.com",
+      subjectAlternativeName: `^${CERTIFY_SAN}v0\\.1\\.6$`,
       buildSignerDigests: [],
     },
     {
@@ -102,10 +110,18 @@ export const DEFAULT_TRUST_POLICY: TrustPolicy = {
       role: "observer",
     },
     {
-      // Public scans and signed findings. NEWEST, by exact tag; v0.1.6 pins its commit.
+      // Public scans and signed findings: the tagged commit.
       forge: "github",
       issuer: "https://token.actions.githubusercontent.com",
       subjectAlternativeName: `^${SCAN_SAN}v0\\.1\\.5$`,
+      buildSignerDigests: ["5fb6a6635f5cee1f8fe51cfa27fa997298d2faf3"],
+      role: "observer",
+    },
+    {
+      // Public scans and signed findings. NEWEST, by exact tag; v0.1.7 pins its commit.
+      forge: "github",
+      issuer: "https://token.actions.githubusercontent.com",
+      subjectAlternativeName: `^${SCAN_SAN}v0\\.1\\.6$`,
       buildSignerDigests: [],
       role: "observer",
     },
