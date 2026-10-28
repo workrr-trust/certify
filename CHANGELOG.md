@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- `scan.yml`: a batch with a single target now lists its record in
+  `workrr-scan-index`. download-artifact extracts a lone artifact straight into
+  `scans/`, so one-target batches (common for skills submitted at skills.workrr.ai)
+  produced an empty index and the ledger never discovered their record. The records
+  were still signed and in the attestation store (ingest by digest recovers them).
+
 ## 0.1.7 (2026-10-28)
 
 Reproduced (gold) can be awarded. The second forge is the **GitLab witness**: this

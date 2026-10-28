@@ -201,7 +201,9 @@ jobs:
       - name: Index
         run: |
           : >index.jsonl
-          for d in scans/*/; do
+          # download-artifact extracts a lone matching artifact straight into scans/
+          # rather than scans/<name>/, so a one-target batch lands in scans/ itself.
+          for d in scans/ scans/*/; do
             [ -f "$d/statement.json" ] || continue
             b=$(ls "$d"/*.sigstore.json 2>/dev/null | head -1)
             jq -c --arg idx "$(jq -r '.verificationMaterial.tlogEntries[0].logIndex // empty' "$b" 2>/dev/null)" \
