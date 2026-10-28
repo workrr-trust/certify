@@ -208,9 +208,16 @@
       },
       {
         "id": "gitlab-witness-newest-tag",
-        "san": "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.8",
+        "san": "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.9",
         "issuer": "https://gitlab.com",
         "buildSignerDigest": "1234567890123456789012345678901234567890",
+        "accepted": true
+      },
+      {
+        "id": "gitlab-witness-v0.1.8-pinned-commit",
+        "san": "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.8",
+        "issuer": "https://gitlab.com",
+        "buildSignerDigest": "723c2563519c43b86b4518339c13a6cf90fb57c2",
         "accepted": true
       },
       {
@@ -243,7 +250,7 @@
       },
       {
         "id": "gitlab-ledger-mirror",
-        "san": "https://gitlab.com/workrr-trust/ledger//mirror/gitlab-ci.yml@refs/tags/v0.1.8",
+        "san": "https://gitlab.com/workrr-trust/ledger//mirror/gitlab-ci.yml@refs/tags/v0.1.9",
         "issuer": "https://gitlab.com",
         "buildSignerDigest": "1234567890123456789012345678901234567890",
         "accepted": false
