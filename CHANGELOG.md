@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- GitLab witness (`scripts/gitlab-sign.mjs`): when Rekor answers a retried upload
+  with 409 (the first attempt was logged), fetch that entry instead of failing. A
+  witness run for sample-skills failed this way and left a Rekor entry with no bundle.
+
 ## 0.1.8 (2026-10-28)
 
 - `scan.yml`: a batch with a single target now lists its record in

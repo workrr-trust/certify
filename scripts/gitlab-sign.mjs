@@ -5,10 +5,37 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
-import { attest } from "sigstore";
+import { bundleToJSON } from "@sigstore/bundle";
+import { DSSEBundleBuilder, FulcioSigner, RekorWitness } from "@sigstore/sign";
 import { PREDICATE_TYPE } from "../dist/certify.js";
 
 const INTOTO_PAYLOAD_TYPE = "application/vnd.in-toto+json";
+
+// sigstore's attest(), with one change: if Rekor already holds the entry (a retried
+// upload whose first attempt was logged, HTTP 409), fetch it instead of failing.
+// Otherwise the log keeps an entry no bundle was written for.
+export async function attest(payload, payloadType, { identityToken }) {
+  const retry = { retries: 2 };
+  const timeout = 5000;
+  const builder = new DSSEBundleBuilder({
+    signer: new FulcioSigner({
+      fulcioBaseURL: "https://fulcio.sigstore.dev",
+      identityProvider: { getToken: () => Promise.resolve(identityToken) },
+      retry,
+      timeout,
+    }),
+    witnesses: [
+      new RekorWitness({
+        rekorBaseURL: "https://rekor.sigstore.dev",
+        entryType: "dsse",
+        fetchOnConflict: true,
+        retry,
+        timeout,
+      }),
+    ],
+  });
+  return bundleToJSON(await builder.create({ data: payload, type: payloadType }));
+}
 
 export function parseGitLabSignArgs(argv = process.argv.slice(2)) {
   const { values } = parseArgs({
