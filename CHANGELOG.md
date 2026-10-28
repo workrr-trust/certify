@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Finding kind: WT002/WT003 matches in bundled or minified code (`dist/`, `build/`,
+  `*.min.js`, `*.min.mjs`, `*.min.cjs`, `*.bundle.js`) no longer make a finding
+  `concealment`. They still fail the scan and are listed, as `check`. Libraries
+  such as mermaid ship bidi characters in their own text handling; the first case
+  was a repository flagged for `mermaid.min.js` and a `dist/` build.
+
 ## 0.1.8 (2026-10-28)
 
 - `scan.yml`: a batch with a single target now lists its record in

@@ -913,6 +913,34 @@ func TestScanRuleCases(t *testing.T) {
 	}
 }
 
+func TestConcealmentSkipsBundles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: s\ndescription: Use when testing\n---\n\n# S\n\nFine.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "mermaid.min.js"), []byte("var s='\u202Eabc';\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := Certify(dir, CertifyOptions{Observe: "https://github.com/someone/skills"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := NewFindingStatement(out)
+	if f == nil || f.Predicate.Kind != "check" || len(f.Predicate.Findings) != 1 || f.Predicate.Findings[0].Rule != "WT003" {
+		t.Fatalf("minified bundle: want one WT003 check finding, got %+v", f)
+	}
+	for _, p := range []string{"dist/index.cjs", "packages/x/dist/index.js", "build/app.js", "assets/mermaid.min.js", "a.min.mjs", "vendor.bundle.js"} {
+		if !BundlePathRe.MatchString(p) {
+			t.Errorf("%s should be a bundle path", p)
+		}
+	}
+	for _, p := range []string{"tool.py", "SKILL.md", "distance/x.js", "src/dist.js", "rebuild/x.js", "min.js"} {
+		if BundlePathRe.MatchString(p) {
+			t.Errorf("%s should not be a bundle path", p)
+		}
+	}
+}
+
 func TestFindings(t *testing.T) {
 	observe := "https://github.com/someone/skills"
 	bad, err := Certify(filepath.Join("..", "test", "fixtures", "bad-skill"), CertifyOptions{Observe: observe})

@@ -16,12 +16,15 @@ export const FINDING_PREDICATE_TYPE = "https://trust.workrr.ai/finding/v0.1";
 
 // Rules whose matches are rarely accidental: invisible Unicode tag characters and
 // bidirectional overrides. A finding with either, outside tests and fixtures (where
-// sanitizers keep their samples), is kind "concealment". Phrase rules (WT007,
-// WT008) match innocent wording too often to be called that.
+// sanitizers keep their samples) and outside bundled or minified code (where
+// libraries such as mermaid ship these characters in their own text handling), is
+// kind "concealment". Phrase rules (WT007, WT008) match innocent wording too often
+// to be called that. Bundles still fail the scan: their items stay, as "check".
 export const CONCEALMENT_RULES = ["WT002", "WT003"];
+export const BUNDLE_PATH = /(^|\/)(dist|build)\/|\.(min|bundle)\.[cm]?js$/;
 
 export function isConcealment(items: FindingItem[]): boolean {
-  return items.some((i) => i.rule && CONCEALMENT_RULES.includes(i.rule) && !TEST_PATH.test(i.file ?? ""));
+  return items.some((i) => i.rule && CONCEALMENT_RULES.includes(i.rule) && !TEST_PATH.test(i.file ?? "") && !BUNDLE_PATH.test(i.file ?? ""));
 }
 
 export type FindingItem = {

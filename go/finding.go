@@ -16,8 +16,13 @@ import (
 const FindingPredicateType = "https://trust.workrr.ai/finding/v0.1"
 
 // ConcealmentRules are rules whose matches are rarely accidental. A finding with
-// one of them outside tests and fixtures is kind "concealment".
+// one of them outside tests and fixtures, and outside bundled or minified code
+// (BundlePathRe), is kind "concealment".
 var ConcealmentRules = []string{"WT002", "WT003"}
+
+// BundlePathRe matches build output and minified bundles, where libraries ship
+// bidi and tag characters in their own text handling.
+var BundlePathRe = regexp.MustCompile(`(^|/)(dist|build)/|\.(min|bundle)\.[cm]?js$`)
 
 type FindingItem struct {
 	Check    string `json:"check"`
@@ -84,7 +89,7 @@ func NewFindingStatement(o *CertifyOutcome) *FindingStatement {
 	}
 	kind := "check"
 	if slices.ContainsFunc(items, func(i FindingItem) bool {
-		return slices.Contains(ConcealmentRules, i.Rule) && !TestPathRe.MatchString(i.File)
+		return slices.Contains(ConcealmentRules, i.Rule) && !TestPathRe.MatchString(i.File) && !BundlePathRe.MatchString(i.File)
 	}) {
 		kind = "concealment"
 	}

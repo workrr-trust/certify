@@ -86,3 +86,18 @@ test("bidi characters in a test file make a check finding, elsewhere a concealme
   const inTool = findingStatement(await certify(await skill("Fine.", { "tool.py": bidi }), { observe }));
   assert.equal(inTool?.predicate.kind, "concealment");
 });
+
+test("bidi characters in bundled or minified code make a check finding", async () => {
+  const bidi = "var s='\u202Eabc';\n";
+  const min = findingStatement(await certify(await skill("Fine.", { "mermaid.min.js": bidi }), { observe }));
+  assert.deepEqual(min?.predicate.findings.map((i) => i.rule), ["WT003"]);
+  assert.equal(min.predicate.kind, "check");
+  const { isConcealment } = await import("../dist/finding.js");
+  const item = (file) => [{ check: "scan", rule: "WT003", severity: "high", file, line: 1, detail: "WT003 (high)" }];
+  for (const f of ["dist/index.cjs", "packages/x/dist/index.js", "build/app.js", "assets/mermaid.min.js", "a.min.mjs", "vendor.bundle.js"]) {
+    assert.equal(isConcealment(item(f)), false, f);
+  }
+  for (const f of ["tool.py", "SKILL.md", "distance/x.js", "src/dist.js", "rebuild/x.js", "min.js"]) {
+    assert.equal(isConcealment(item(f)), true, f);
+  }
+});
