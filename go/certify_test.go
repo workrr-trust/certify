@@ -371,9 +371,17 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v011) == nil {
 		t.Fatal("rejected the pinned v0.1.1 tag")
 	}
-	gl := &Signer{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.7", Issuer: "https://gitlab.com", BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	gl := &Signer{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.8", Issuer: "https://gitlab.com", BuildSignerDigest: "1234567890123456789012345678901234567890"}
 	if s := MatchSigner(&DefaultTrustPolicy, gl); s == nil || s.Forge != ForgeGitLab || s.Role != RoleWitness {
 		t.Fatalf("expected gitlab witness, got %+v", s)
+	}
+	gl17 := &Signer{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.7", Issuer: "https://gitlab.com", BuildSignerDigest: "0efed0e76b1d0be3d3488ead7ed26023dbe32be6"}
+	if s := MatchSigner(&DefaultTrustPolicy, gl17); s == nil || s.Role != RoleWitness {
+		t.Fatalf("expected the v0.1.7 witness at its commit, got %+v", s)
+	}
+	gl17.BuildSignerDigest = "1234567890123456789012345678901234567890"
+	if MatchSigner(&DefaultTrustPolicy, gl17) != nil {
+		t.Error("accepted the v0.1.7 witness at another commit")
 	}
 	for _, bad := range []*Signer{
 		{SAN: gh.SAN + "x", Issuer: gh.Issuer, BuildSignerDigest: tagV010},
@@ -386,8 +394,8 @@ func TestMatchSigner(t *testing.T) {
 		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/heads/main", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
 		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.0", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
 		{SAN: "https://gitlab.com/workrr-trust/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.6", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
-		{SAN: "https://gitlab.com/workrr-trust/ledger//mirror/gitlab-ci.yml@refs/tags/v0.1.7", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
-		{SAN: "https://gitlab.com/someone/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.7", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
+		{SAN: "https://gitlab.com/workrr-trust/ledger//mirror/gitlab-ci.yml@refs/tags/v0.1.8", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
+		{SAN: "https://gitlab.com/someone/certify-gitlab//.gitlab-ci.yml@refs/tags/v0.1.8", Issuer: "https://gitlab.com", BuildSignerDigest: tagV010},
 		{SAN: gl.SAN, Issuer: gh.Issuer, BuildSignerDigest: tagV010},
 	} {
 		if s := MatchSigner(&DefaultTrustPolicy, bad); s != nil {
@@ -396,9 +404,17 @@ func TestMatchSigner(t *testing.T) {
 	}
 	// The newest release is accepted by its exact tag with any digest; later or
 	// look-alike tags are not.
-	v017 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.7", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
-	if s := MatchSigner(&DefaultTrustPolicy, v017); s == nil || s.Role != "" {
-		t.Errorf("newest release tag v0.1.7: got %+v", s)
+	v018 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.8", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	if s := MatchSigner(&DefaultTrustPolicy, v018); s == nil || s.Role != "" {
+		t.Errorf("newest release tag v0.1.8: got %+v", s)
+	}
+	v017 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.7", Issuer: gh.Issuer, BuildSignerDigest: "6291248fc63176cbf4b182c0aaae5aae14819729"}
+	if MatchSigner(&DefaultTrustPolicy, v017) == nil {
+		t.Error("rejected v0.1.7 at its pinned tag digest")
+	}
+	v017.BuildSignerDigest = "0efed0e76b1d0be3d3488ead7ed26023dbe32be6"
+	if MatchSigner(&DefaultTrustPolicy, v017) != nil {
+		t.Error("accepted certify.yml@v0.1.7 at the peeled commit")
 	}
 	v016 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@refs/tags/v0.1.6", Issuer: gh.Issuer, BuildSignerDigest: "90f9138d6ed5e55981ad1dbb90b5a2345f420b0e"}
 	if MatchSigner(&DefaultTrustPolicy, v016) == nil {
@@ -432,9 +448,13 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v013) != nil {
 		t.Error("accepted v0.1.3 at the peeled commit")
 	}
-	scan := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.7", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
+	scan := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.8", Issuer: gh.Issuer, BuildSignerDigest: "1234567890123456789012345678901234567890"}
 	if s := MatchSigner(&DefaultTrustPolicy, scan); s == nil || s.Role != RoleObserver {
-		t.Errorf("scan.yml@v0.1.7 should be an observer, got %+v", s)
+		t.Errorf("scan.yml@v0.1.8 should be an observer, got %+v", s)
+	}
+	scan17 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.7", Issuer: gh.Issuer, BuildSignerDigest: "0efed0e76b1d0be3d3488ead7ed26023dbe32be6"}
+	if s := MatchSigner(&DefaultTrustPolicy, scan17); s == nil || s.Role != RoleObserver {
+		t.Errorf("scan.yml@v0.1.7 at its commit should be an observer, got %+v", s)
 	}
 	scan15 := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/scan.yml@refs/tags/v0.1.5", Issuer: gh.Issuer, BuildSignerDigest: "5fb6a6635f5cee1f8fe51cfa27fa997298d2faf3"}
 	if s := MatchSigner(&DefaultTrustPolicy, scan15); s == nil || s.Role != RoleObserver {
@@ -465,7 +485,7 @@ func TestMatchSigner(t *testing.T) {
 	if MatchSigner(&DefaultTrustPolicy, v012) != nil {
 		t.Error("accepted v0.1.2 at the peeled commit")
 	}
-	for _, ref := range []string{"refs/tags/v0.1.8", "refs/tags/v0.1.7x", "refs/tags/v0.1.7-rc1", "refs/heads/v0.1.7"} {
+	for _, ref := range []string{"refs/tags/v0.1.9", "refs/tags/v0.1.8x", "refs/tags/v0.1.8-rc1", "refs/heads/v0.1.8"} {
 		s := &Signer{SAN: "https://github.com/workrr-trust/certify/.github/workflows/certify.yml@" + ref, Issuer: gh.Issuer, BuildSignerDigest: tagV010}
 		if MatchSigner(&DefaultTrustPolicy, s) != nil {
 			t.Errorf("accepted %s", ref)
