@@ -22,7 +22,11 @@ a public GitHub commit (docs/gitlab-certifier.md).
   records that repository as the source of a checkout made outside its own CI.
   Tests still count.
 - Gold compares the publisher (owner/repo across forges) as well as commit, path and
-  checks.
+  checks. Any agreeing pair counts: a digest often has certificates from
+  several commits.
+- Signed trust policies: a signer with a role this release doesn't know is skipped
+  instead of rejecting the policy. Releases before 0.1.7 reject a signed policy that
+  lists the witness, so none is published while they are in use.
 - Trust policy: pin v0.1.6: `certify.yml` to its tag object
   `90f9138d6ed5e55981ad1dbb90b5a2345f420b0e`, and `scan.yml` to the tagged commit
   `a6aaa8f664d87f7dc2b8becb6382b29c15763025`. Accept this release by exact tag

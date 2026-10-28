@@ -265,32 +265,44 @@ func EvaluateGoldBundles(valid []BundleResult, notes []string) (level string, ou
 	}
 	// Gold: a publisher's silver on GitHub and a silver on GitLab (the witness, or the
 	// publisher's own) for the same repository, commit, path and checks.
-	find := func(f Forge, sets ...[]BundleResult) *BundleResult {
-		for _, set := range sets {
-			for i := range set {
-				if set[i].Forge == f {
-					return &set[i]
+	// Any agreeing pair counts: a digest often has certificates from several commits.
+	var github, gitlab []BundleResult
+	for _, b := range silver {
+		switch b.Forge {
+		case ForgeGitHub:
+			github = append(github, b)
+		case ForgeGitLab:
+			gitlab = append(gitlab, b)
+		}
+	}
+	for _, w := range witnesses {
+		if w.Forge == ForgeGitLab {
+			gitlab = append(gitlab, w)
+		}
+	}
+	mismatch := ""
+	for _, a := range github {
+		for _, b := range gitlab {
+			commitA, pathA := predicateCommitAndPath(a.Statement)
+			commitB, pathB := predicateCommitAndPath(b.Statement)
+			sameCommit := commitA != "" && commitA == commitB && pathA == pathB &&
+				publisherKey(predicateSourceURI(a.Statement)) == publisherKey(predicateSourceURI(b.Statement))
+			ca, errA := CanonicalJSON(predicateField(a.Statement, "checks"))
+			cb, errB := CanonicalJSON(predicateField(b.Statement, "checks"))
+			switch {
+			case !sameCommit:
+				if mismatch == "" {
+					mismatch = "two forges signed, but their source commits differ — not Gold"
 				}
+			case errA != nil || errB != nil || ca != cb:
+				mismatch = "two forges signed, but their check results differ — not Gold"
+			default:
+				level = "gold"
 			}
 		}
-		return nil
 	}
-	a, b := find(ForgeGitHub, silver), find(ForgeGitLab, silver, witnesses)
-	if a != nil && b != nil {
-		commitA, pathA := predicateCommitAndPath(a.Statement)
-		commitB, pathB := predicateCommitAndPath(b.Statement)
-		uriA, uriB := predicateSourceURI(a.Statement), predicateSourceURI(b.Statement)
-		sameCommit := commitA != "" && commitA == commitB && pathA == pathB && publisherKey(uriA) == publisherKey(uriB)
-		ca, errA := CanonicalJSON(predicateField(a.Statement, "checks"))
-		cb, errB := CanonicalJSON(predicateField(b.Statement, "checks"))
-		sameChecks := errA == nil && errB == nil && ca == cb
-		if !sameCommit {
-			outNotes = append(outNotes, "two forges signed, but their source commits differ — not Gold")
-		} else if !sameChecks {
-			outNotes = append(outNotes, "two forges signed, but their check results differ — not Gold")
-		} else {
-			level = "gold"
-		}
+	if level != "gold" && mismatch != "" {
+		outNotes = append(outNotes, mismatch)
 	}
 	return level, outNotes
 }

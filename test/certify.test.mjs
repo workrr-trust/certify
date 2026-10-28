@@ -487,6 +487,9 @@ test("the GitLab witness makes a publisher's GitHub silver gold, and alone is sc
 
   assert.equal(evaluateGoldBundles([gh, witness], []).level, "gold");
   assert.equal(evaluateGoldBundles([witness], []).level, "scanned");
+  // An older GitHub certificate for another commit doesn't hide the agreeing pair.
+  const older = { ...gh, statement: statement({ source: { uri: "https://github.com/workrr-trust/sample-skills", commit: "b".repeat(40), path: "skills/csv-summary" } }) };
+  assert.equal(evaluateGoldBundles([older, witness, gh], []).level, "gold");
   // A different repository with the same commit and path is not agreement.
   const other = { ...witness, statement: statement({ source: { uri: "https://github.com/someone/sample-skills", commit: "a".repeat(40), path: "skills/csv-summary" } }) };
   assert.equal(evaluateGoldBundles([gh, other], []).level, "silver");

@@ -820,6 +820,13 @@ func TestWitnessMakesGold(t *testing.T) {
 	if lvl, _ := EvaluateGoldBundles([]BundleResult{witness}, nil); lvl != "scanned" {
 		t.Errorf("witness alone: %q", lvl)
 	}
+	older := gh
+	olderStatement := scannedStatement("silver", "pass")
+	olderStatement["predicate"].(map[string]any)["source"] = map[string]any{"uri": "https://github.com/someone/skills", "commit": strings.Repeat("b", 40), "path": "skills/s"}
+	older.Statement = olderStatement
+	if lvl, notes := EvaluateGoldBundles([]BundleResult{older, witness, gh}, nil); lvl != "gold" {
+		t.Errorf("older commit first: %q (%v)", lvl, notes)
+	}
 	other := witness
 	other.Statement = src("https://github.com/other/skills")
 	if lvl, _ := EvaluateGoldBundles([]BundleResult{gh, other}, nil); lvl != "silver" {

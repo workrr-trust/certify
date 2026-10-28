@@ -290,23 +290,28 @@ export function evaluateGoldBundles(
   let level: VerifyResult["level"] = silver.length > 0 ? "silver" : "banded";
   // Gold: a publisher's silver on GitHub and a silver on GitLab (the witness, or the
   // publisher's own) for the same repository, commit, path and checks.
+  // Any agreeing pair counts: a digest often has certificates from several commits.
   const witnesses = valid.filter((b) => b.witness && deriveStatementLevel(b.statement) === "silver");
-  const a = silver.find((x) => x.forge === "github");
-  const b = [...silver, ...witnesses].find((x) => x.forge === "gitlab");
-  if (a?.statement && b?.statement) {
-    const sameCommit =
-      publisherKey(a.statement.predicate.source.uri) === publisherKey(b.statement.predicate.source.uri) &&
-      a.statement.predicate.source.commit.toLowerCase() === b.statement.predicate.source.commit.toLowerCase() &&
-      a.statement.predicate.source.path === b.statement.predicate.source.path;
-    const sameChecks = canonicalJson(a.statement.predicate.checks) === canonicalJson(b.statement.predicate.checks);
-    if (!sameCommit) {
-      outNotes.push("two forges signed, but their source commits differ — not Gold");
-    } else if (!sameChecks) {
-      outNotes.push("two forges signed, but their check results differ — not Gold");
-    } else {
-      level = "gold";
+  const github = silver.filter((x) => x.forge === "github");
+  const gitlab = [...silver, ...witnesses].filter((x) => x.forge === "gitlab");
+  let mismatch: string | undefined;
+  for (const a of github) {
+    for (const b of gitlab) {
+      if (!a.statement || !b.statement) continue;
+      const sameCommit =
+        publisherKey(a.statement.predicate.source.uri) === publisherKey(b.statement.predicate.source.uri) &&
+        a.statement.predicate.source.commit.toLowerCase() === b.statement.predicate.source.commit.toLowerCase() &&
+        a.statement.predicate.source.path === b.statement.predicate.source.path;
+      if (!sameCommit) {
+        mismatch ??= "two forges signed, but their source commits differ — not Gold";
+      } else if (canonicalJson(a.statement.predicate.checks) !== canonicalJson(b.statement.predicate.checks)) {
+        mismatch = "two forges signed, but their check results differ — not Gold";
+      } else {
+        level = "gold";
+      }
     }
   }
+  if (level !== "gold" && mismatch) outNotes.push(mismatch);
   return { level, notes: outNotes };
 }
 
