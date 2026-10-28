@@ -178,7 +178,38 @@ jobs:
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          # discover.sh in workrr-trust/ledger reads statement.json from these.
           name: workrr-scan-${{ strategy.job-index }}
           path: out/
           if-no-files-found: ignore
+          retention-days: 14
+
+  # One index per run, so the ledger's discover makes one download per batch
+  # instead of one per target. It is only a hint: the ledger re-fetches every bundle
+  # from the attestation store and verifies it from scratch.
+  index:
+    needs: scan
+    if: always() && needs.scan.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: workrr-scan-*
+          path: scans
+      - name: Index
+        run: |
+          : >index.jsonl
+          for d in scans/*/; do
+            [ -f "$d/statement.json" ] || continue
+            b=$(ls "$d"/*.sigstore.json 2>/dev/null | head -1)
+            jq -c --arg idx "$(jq -r '.verificationMaterial.tlogEntries[0].logIndex // empty' "$b" 2>/dev/null)" \
+              '{digest: .subject[0].digest.sha256, predicateType, logIndex: $idx, source: .predicate.source}' \
+              "$d/statement.json" >>index.jsonl
+          done
+          echo "$(wc -l <index.jsonl) record(s)" >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workrr-scan-index
+          path: index.jsonl
