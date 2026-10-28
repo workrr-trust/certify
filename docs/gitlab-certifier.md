@@ -76,12 +76,17 @@ maintainer didn't sign it.
 
 ## Where the witness certificate lives
 
-The publisher's workflow that started the witness run stores the GitLab bundle in its
-repository's GitHub attestation store, next to its own certificate
-(`POST /repos/{owner}/{repo}/attestations`). The ledger pulls both from there and
-verifies them like any other bundle; where a bundle is stored adds no trust.
-[`workrr-trust/sample-skills`](https://github.com/workrr-trust/sample-skills) does this
-on every push.
+In the witness's own public job artifact and in public Rekor. GitHub's attestation
+store only accepts certificates GitHub issued (`issuer is not GitHub`), so the bundle
+stays where it was made. Rekor indexes every entry by subject digest, and each Fulcio
+certificate names the job that signed it (Run Invocation URI,
+`https://gitlab.com/workrr-trust/certify-gitlab/-/jobs/<id>`). Anyone can follow that
+chain without workrr: digest → Rekor entries signed by the witness identity → job →
+`certificate/certificate.sigstore.json`. The ledger does exactly that
+([`scripts/witness.sh`](https://github.com/workrr-trust/ledger/blob/main/scripts/witness.sh))
+and verifies the bundle like any other; where a bundle is stored adds no trust.
+[`workrr-trust/sample-skills`](https://github.com/workrr-trust/sample-skills) starts a
+witness run on every push.
 
 ## Limits
 
