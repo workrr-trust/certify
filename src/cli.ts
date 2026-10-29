@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // workrr — certify and verify AI agent artifacts.
-import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { loadArtifact } from "./artifact.js";
 import { certify } from "./certify.js";
@@ -9,6 +10,7 @@ import { levelName, parseLevel } from "./levels.js";
 import { BASELINE_POLICY, type Policy } from "./checks/policy.js";
 import { runTests, type TestsReport } from "./checks/tests.js";
 import { digestArtifact } from "./digest.js";
+import { buildPack, collectDependencies, collectPublisher, primaryBundle, PROFILES, type PackBundle, type Profile } from "./evidence.js";
 import { runOrgPolicyGate, type GateLevel } from "./gate.js";
 import { loadTrustPolicy } from "./policy-loader.js";
 import { DEFAULT_TRUST_POLICY, type TrustPolicy } from "./trust-policy.js";
@@ -29,6 +31,8 @@ Usage:
                         [--trusted-root trusted_root.json] [--anchor-receipt receipt.json]
   workrr verify-finding <path> --bundle <file> [--trust-policy policy.json] [--json]
   workrr anchor  <path> --bundle <file> [--out anchor-request.json]
+  workrr evidence <path> --bundle <file> [--bundle <file>] --profile cra --out <dir>
+                        [--trust-policy policy.json] [--offline] [--trusted-root trusted_root.json]
   workrr gate    <repo-dir> [--min-level scanned|signed|tested|reproduced] [--policy policy.json]
                             [--certificates-dir <dir>] [--source <repo>] [--json]
 
@@ -66,6 +70,11 @@ Usage:
   Levels, least to most scrutiny: Scanned, Signed, Tested, Reproduced (wire
   values scanned, banded, silver, gold). Either name works for --min-level.
   anchor   Computes the hash-only public anchor request payload for a private bundle.
+  evidence Verifies like \`verify\`, then writes an evidence pack to --out: the
+           certificate mapped to one regulation's records (docs/evidence.md).
+           Profiles: cra (EU Cyber Resilience Act). Refuses when verification
+           fails. The pack is evidence for the user's own assessment, never a
+           conformity assessment or declaration.
   gate     Org policy gate: discovers all skills in <repo-dir> and exits 1 if
            any skill is uncertified, fails policy/scan, or is below --min-level.
 `;
@@ -107,6 +116,7 @@ async function main(argv: string[]): Promise<number> {
       private: { type: "boolean" },
       offline: { type: "boolean" },
       json: { type: "boolean" },
+      profile: { type: "string" },
     },
   });
   const path = positionals[0];
@@ -301,6 +311,56 @@ async function main(argv: string[]): Promise<number> {
       const out = JSON.stringify(hashes, null, 2) + "\n";
       if (values.out) await writeFile(values.out, out);
       else process.stdout.write(out);
+      return 0;
+    }
+    case "evidence": {
+      if (!values.bundle?.length) throw new Error("evidence needs at least one --bundle");
+      const profile = values.profile as Profile | undefined;
+      if (!profile || !PROFILES.includes(profile)) throw new Error(`--profile must be one of: ${PROFILES.join(", ")}`);
+      if (!values.out) throw new Error("evidence needs --out <dir>");
+      const loaded = await loadTrustPolicy({ offline: values.offline, file: values["trust-policy"] });
+      if (loaded.status !== "ok") throw new Error(`trust policy: ${loaded.warnings.join("; ") || loaded.status}`);
+      const revocationChecked = !values.offline && loaded.revocationChecked;
+      const result = await verifyArtifact(path, values.bundle, loaded.policy, {
+        offline: values.offline,
+        revocations: revocationChecked ? loaded.revocations : undefined,
+        baselinePolicyDigests: loaded.baselinePolicyDigests,
+        trustedRootPath: values["trusted-root"],
+      });
+      if (revocationChecked) result.notes = result.notes.filter((n) => !n.startsWith("revocation is not checked in v0.1"));
+      for (const warning of loaded.warnings) if (!result.notes.includes(warning)) result.notes.push(warning);
+      if (!result.ok || result.status !== "verified") {
+        process.stdout.write(`${result.status === "REVOKED" ? "REVOKED" : "NOT VERIFIED"}: no evidence pack was built\n`);
+        for (const b of result.bundles) if (!b.ok) process.stdout.write(`  ✗ ${b.bundlePath} — ${b.error}\n`);
+        return 1;
+      }
+      const used = new Set<string>();
+      const bundles: PackBundle[] = await Promise.all(result.bundles.map(async (r, i) => {
+        let file = `certificate/${basename(r.bundlePath)}`;
+        if (used.has(file)) file = `certificate/${i}-${basename(r.bundlePath)}`;
+        used.add(file);
+        return { file, bytes: await readFile(r.bundlePath), result: r };
+      }));
+      const artifact = await loadArtifact(path);
+      const predicate = primaryBundle(bundles).result.statement!.predicate;
+      const pack = buildPack({
+        artifact,
+        verify: result,
+        bundles,
+        publisher: await collectPublisher(artifact, predicate),
+        dependencies: await collectDependencies(artifact),
+        revocationChecked,
+        builtAt: new Date().toISOString(),
+      }, profile);
+      for (const [name, contents] of pack) {
+        const dest = join(values.out, name);
+        await mkdir(dirname(dest), { recursive: true });
+        await writeFile(dest, contents);
+      }
+      await chmod(join(values.out, "verify.sh"), 0o755);
+      process.stdout.write(`evidence pack (${profile}) for sha256:${result.artifactDigest} written to ${values.out}\n`);
+      for (const name of pack.keys()) process.stdout.write(`  ${name}\n`);
+      for (const n of result.notes) process.stdout.write(`  note: ${n}\n`);
       return 0;
     }
     default:

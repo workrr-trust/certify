@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `workrr evidence <path> --bundle <file> --profile cra --out <dir>`: verifies like
+  `verify`, then writes an evidence pack, the certificate mapped to the EU Cyber
+  Resilience Act's component due-diligence and technical-documentation clauses
+  (`docs/evidence.md`). The pack holds a printable summary, `evidence.json`,
+  `mapping.cra.json`, a CycloneDX 1.6 component SBOM, the original bundle(s), `verify.sh`
+  and an unsigned due-diligence template. No pack is built from a certificate that fails
+  verification or is revoked. Nothing about certificates changes.
+- `workrr.json` may declare `support.until` and `security.policy` / `security.contact`.
+  The certifier does not check them; evidence packs report them as publisher-declared.
+
 ## 0.1.9 (2026-10-28)
 
 - Finding kind: WT002/WT003 matches in bundled or minified code (`dist/`, `build/`,

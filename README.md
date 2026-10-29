@@ -22,6 +22,7 @@ with **publicly logged certificates anyone can verify without trusting workrr**.
 - **Implementations:** TypeScript (this directory) and Go ([go/](go/), single static
   binary), held byte-for-byte to each other by the shared [test vectors](spec/test-vectors/README.md)
 - **Design rationale:** [docs/design.md](docs/design.md)
+- **Evidence packs for regulation and audits (draft):** [docs/evidence.md](docs/evidence.md)
 - **Security:** [SECURITY.md](SECURITY.md)
 - **License:** [Apache-2.0](LICENSE)
 
