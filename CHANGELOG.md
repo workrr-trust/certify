@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.10 (2026-10-29)
 
 - `workrr evidence <path> --bundle <file> --profile cra --out <dir>`: verifies like
   `verify`, then writes an evidence pack, the certificate mapped to the EU Cyber
@@ -11,6 +11,13 @@
   verification or is revoked. Nothing about certificates changes.
 - `workrr.json` may declare `support.until` and `security.policy` / `security.contact`.
   The certifier does not check them; evidence packs report them as publisher-declared.
+
+- `watch.yml` re-queues a target whose scan job failed, at most twice per commit, and
+  dispatches `scan.yml` at v0.1.10.
+- Trust policy: pin v0.1.9: `certify.yml` to its tag object
+  `fc014737ebdaa35f618ba9abc4bf1dbcad7605d6`; `scan.yml` and the GitLab witness to the tagged
+  commit `9ac10f8660310f300ef7b5aed560388b06068746`. Accept this release by exact tag until
+  v0.1.11 pins it.
 
 ## 0.1.9 (2026-10-28)
 

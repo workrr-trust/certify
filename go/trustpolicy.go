@@ -70,6 +70,8 @@ type TrustPolicy struct {
 //	       commit 0efed0e76b1d0be3d3488ead7ed26023dbe32be6
 //	v0.1.8 tag 7b19119ca8e446e2fa533b366e6b6921f6349470
 //	       commit 723c2563519c43b86b4518339c13a6cf90fb57c2
+//	v0.1.9 tag fc014737ebdaa35f618ba9abc4bf1dbcad7605d6
+//	       commit 9ac10f8660310f300ef7b5aed560388b06068746
 //
 // scan.yml is dispatched directly (workflow_dispatch), not called, so for it Fulcio
 // records the tagged COMMIT, not the tag object: scan.yml@v0.1.4 is 14466afa….
@@ -142,10 +144,16 @@ var DefaultTrustPolicy = TrustPolicy{
 			BuildSignerDigests:     []string{"7b19119ca8e446e2fa533b366e6b6921f6349470"},
 		},
 		{
-			// Newest: this release, by exact tag; v0.1.10 pins its digest.
 			Forge:                  ForgeGitHub,
 			Issuer:                 "https://token.actions.githubusercontent.com",
 			SubjectAlternativeName: `^` + certifySAN + `v0\.1\.9$`,
+			BuildSignerDigests:     []string{"fc014737ebdaa35f618ba9abc4bf1dbcad7605d6"},
+		},
+		{
+			// Newest: this release, by exact tag; v0.1.11 pins its digest.
+			Forge:                  ForgeGitHub,
+			Issuer:                 "https://token.actions.githubusercontent.com",
+			SubjectAlternativeName: `^` + certifySAN + `v0\.1\.10$`,
 			BuildSignerDigests:     []string{},
 		},
 		{
@@ -188,10 +196,18 @@ var DefaultTrustPolicy = TrustPolicy{
 			Role:                   RoleObserver,
 		},
 		{
-			// Public scans and signed findings. Newest, by exact tag; v0.1.10 pins its commit.
+			// Public scans and signed findings: the tagged commit.
 			Forge:                  ForgeGitHub,
 			Issuer:                 "https://token.actions.githubusercontent.com",
 			SubjectAlternativeName: `^` + scanSAN + `v0\.1\.9$`,
+			BuildSignerDigests:     []string{"9ac10f8660310f300ef7b5aed560388b06068746"},
+			Role:                   RoleObserver,
+		},
+		{
+			// Public scans and signed findings. Newest, by exact tag; v0.1.11 pins its commit.
+			Forge:                  ForgeGitHub,
+			Issuer:                 "https://token.actions.githubusercontent.com",
+			SubjectAlternativeName: `^` + scanSAN + `v0\.1\.10$`,
 			BuildSignerDigests:     []string{},
 			Role:                   RoleObserver,
 		},
@@ -213,10 +229,18 @@ var DefaultTrustPolicy = TrustPolicy{
 			Role:                   RoleWitness,
 		},
 		{
-			// GitLab witness. Newest, by exact tag; v0.1.10 pins its commit.
+			// GitLab witness: the tagged commit (ci_config_sha).
 			Forge:                  ForgeGitLab,
 			Issuer:                 "https://gitlab.com",
 			SubjectAlternativeName: `^` + witnessSAN + `v0\.1\.9$`,
+			BuildSignerDigests:     []string{"9ac10f8660310f300ef7b5aed560388b06068746"},
+			Role:                   RoleWitness,
+		},
+		{
+			// GitLab witness. Newest, by exact tag; v0.1.11 pins its commit.
+			Forge:                  ForgeGitLab,
+			Issuer:                 "https://gitlab.com",
+			SubjectAlternativeName: `^` + witnessSAN + `v0\.1\.10$`,
 			BuildSignerDigests:     []string{},
 			Role:                   RoleWitness,
 		},
