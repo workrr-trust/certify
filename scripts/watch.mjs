@@ -231,13 +231,15 @@ async function main() {
 
   const latest = await latestCommits([...candidates.values()]);
   const queue = [];
+  const before = new Map(); // state as it was, for targets whose dispatch fails
   for (const t of candidates.values()) {
     const l = latest.get(t.key);
     if (!l) continue; // query failed; try again next run
     const prev = state.get(t.key) ?? {};
     if (!l.gone && l.commit && (l.commit !== prev.commit || prev.retry)) {
       if (queue.length >= MAX) continue; // over the cap: state untouched, so a later run dispatches it
-      queue.push({ repository: t.repo, commit: l.commit, path: t.path });
+      queue.push({ repository: t.repo, commit: l.commit, path: t.path, key: t.key });
+      before.set(t.key, state.get(t.key));
       // A new commit starts its own count of failures.
       state.set(t.key, { commit: l.commit, checkedAt, failures: l.commit === prev.commit ? prev.failures : 0 });
     } else {
@@ -245,14 +247,29 @@ async function main() {
     }
   }
   log(`${queue.length} to scan at ${env.SCAN_TAG}${DRY ? " (dry run)" : ""}`);
+  // A batch whose dispatch still fails after gh()'s retries (GitHub answers 500 now and
+  // then) gets its state put back, so the next run dispatches it again; the other batches
+  // and the state file still go through. The run fails only if no batch went out.
+  let failed = 0;
+  const batches = Math.ceil(queue.length / 50);
   for (let i = 0; i < queue.length; i += 50) {
     const batch = queue.slice(i, i + 50);
     for (const t of batch) log(`  ${t.repository}@${t.commit.slice(0, 12)} ${t.path}`);
-    if (!DRY) {
+    if (DRY) continue;
+    if (i) await new Promise((r) => setTimeout(r, 2000)); // spread the dispatches out
+    try {
       await gh("POST", `/repos/${REPO}/actions/workflows/scan.yml/dispatches`, {
         ref: env.SCAN_TAG,
-        inputs: { targets: JSON.stringify(batch) },
+        inputs: { targets: JSON.stringify(batch.map(({ key, ...t }) => t)) },
       });
+    } catch (e) {
+      failed++;
+      for (const t of batch) {
+        const prev = before.get(t.key);
+        if (prev) state.set(t.key, prev);
+        else state.delete(t.key);
+      }
+      console.log(`::warning::batch ${i / 50 + 1} of ${batches} not dispatched, left for the next run: ${e.message}`);
     }
   }
   if (env.STATE_OUT) {
@@ -264,6 +281,7 @@ async function main() {
     });
     writeFileSync(env.STATE_OUT, rows.join("\n") + "\n");
   }
+  if (batches && failed === batches) throw new Error(`none of ${batches} scan batch(es) could be dispatched`);
 }
 
 main().catch((e) => {
