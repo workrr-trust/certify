@@ -94,35 +94,54 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      # A fetch that fails is retried (GitHub drops a connection now and then). Two things
+      # no retry fixes end the job as "not scanned" instead of failing it, and nothing is
+      # signed: the repository's Git LFS objects can't be downloaded (over its LFS budget),
+      # or the path isn't in that commit (it was moved or deleted).
       - name: Check out the scanned commit (no credentials)
+        id: checkout
         env:
           REPOSITORY: ${{ matrix.repository }}
           COMMIT: ${{ matrix.commit }}
+          ARTIFACT_PATH: ${{ matrix.path }}
         run: |
           set -euo pipefail
           git init --quiet subject
-          git -C subject -c credential.helper= fetch --quiet --depth 1 "https://github.com/$REPOSITORY" "$COMMIT"
-          git -C subject -c advice.detachedHead=false checkout --quiet FETCH_HEAD
+          for attempt in 1 2 3; do
+            git -C subject -c credential.helper= fetch --quiet --depth 1 "https://github.com/$REPOSITORY" "$COMMIT" && break
+            [ "$attempt" -lt 3 ] || exit 1
+            sleep $((attempt * 20))
+          done
+          if ! git -C subject -c advice.detachedHead=false checkout --quiet FETCH_HEAD 2>checkout.err; then
+            cat checkout.err >&2
+            grep -q "smudge filter lfs failed" checkout.err || exit 1
+            echo "skip=its Git LFS objects could not be downloaded" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
           [ "$(git -C subject rev-parse HEAD)" = "$COMMIT" ]
+          [ -e "subject/$ARTIFACT_PATH" ] || echo "skip=$ARTIFACT_PATH is not in this commit" >>"$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.checkout.outputs.skip == ''
         with:
           path: .workrr-certifier
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.checkout.outputs.skip == ''
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: .workrr-certifier/package-lock.json
       - name: Build certifier
+        if: steps.checkout.outputs.skip == ''
         working-directory: .workrr-certifier
         run: npm ci --ignore-scripts && npm run build
       - name: Certify (observe)
         id: run
+        if: steps.checkout.outputs.skip == ''
         env:
           REPOSITORY: ${{ matrix.repository }}
           ARTIFACT_PATH: ${{ matrix.path }}
         run: |
-          [ -e "subject/$ARTIFACT_PATH" ] || { echo "::error::$ARTIFACT_PATH not found at this commit"; exit 1; }
           status=0
           node .workrr-certifier/dist/cli.js certify "subject/$ARTIFACT_PATH" \
             --observe "https://github.com/$REPOSITORY" \
@@ -131,9 +150,13 @@ jobs:
           # 1 means a check failed: a finding is signed below when a security check
           # failed; layout problems alone sign nothing. 2 is an error.
           [ "$status" -le 1 ]
+      # Rekor answers "error creating tlog entry" or times out now and then: each signing
+      # step is tried once more a minute later. A retry after a failure that reached
+      # Rekor only adds a second log entry for the same statement.
       - name: Sign the certificate and log to Rekor
-        id: attest
+        id: attest1
         if: steps.run.outputs.certified == 'true'
+        continue-on-error: true
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.run.outputs.subject-name }}
@@ -141,8 +164,30 @@ jobs:
           predicate-type: https://trust.workrr.ai/certificate/v0.1
           predicate-path: predicate.json
       - name: Sign the finding and log to Rekor
-        id: finding
+        id: finding1
         if: steps.run.outputs.finding != ''
+        continue-on-error: true
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.run.outputs.subject-name }}
+          subject-digest: ${{ steps.run.outputs.subject-digest }}
+          predicate-type: https://trust.workrr.ai/finding/v0.1
+          predicate-path: finding.json
+      - name: Wait before signing again
+        if: steps.attest1.outcome == 'failure' || steps.finding1.outcome == 'failure'
+        run: sleep 60
+      - name: Sign the certificate and log to Rekor (second try)
+        id: attest2
+        if: steps.attest1.outcome == 'failure'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.run.outputs.subject-name }}
+          subject-digest: ${{ steps.run.outputs.subject-digest }}
+          predicate-type: https://trust.workrr.ai/certificate/v0.1
+          predicate-path: predicate.json
+      - name: Sign the finding and log to Rekor (second try)
+        id: finding2
+        if: steps.finding1.outcome == 'failure'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.run.outputs.subject-name }}
@@ -151,8 +196,9 @@ jobs:
           predicate-path: finding.json
       - name: Collect
         env:
-          CERT: ${{ steps.attest.outputs.bundle-path }}
-          FINDING_BUNDLE: ${{ steps.finding.outputs.bundle-path }}
+          CERT: ${{ steps.attest1.outputs.bundle-path || steps.attest2.outputs.bundle-path }}
+          FINDING_BUNDLE: ${{ steps.finding1.outputs.bundle-path || steps.finding2.outputs.bundle-path }}
+          SKIP: ${{ steps.checkout.outputs.skip }}
           KIND: ${{ steps.run.outputs.finding }}
           LEVEL: ${{ steps.run.outputs.level }}
           BAND: ${{ steps.run.outputs.band }}
@@ -164,6 +210,10 @@ jobs:
         run: |
           mkdir -p out
           echo "### workrr public scan: \`$REPOSITORY@${COMMIT:0:12}\` \`$ARTIFACT_PATH\`" >>"$GITHUB_STEP_SUMMARY"
+          if [ -n "$SKIP" ]; then
+            echo "- not scanned, nothing signed: $SKIP" >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           echo "- subject: \`$SUBJECT\` \`$DIGEST\`" >>"$GITHUB_STEP_SUMMARY"
           if [ -n "$CERT" ]; then
             cp "$CERT" out/certificate.sigstore.json

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Public scans (`scan.yml`) ride out transient failures instead of failing the job: a
+  failed fetch is retried twice, and each Rekor signing step is tried once more a minute
+  later. A repository whose Git LFS objects can't be downloaded, or a path that isn't in
+  the scanned commit, ends the job as "not scanned" with nothing signed, instead of failing.
+- The watcher (`scripts/watch.mjs`) no longer fails a whole run when one dispatch batch
+  gets a GitHub 500 after its retries: that batch's targets keep their previous state, so
+  the next run dispatches them, and the rest of the run and its state go through. It
+  fails only if no batch could be dispatched.
+
 ## 0.1.10 (2026-10-29)
 
 - `workrr evidence <path> --bundle <file> --profile cra --out <dir>`: verifies like
