@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.11 (2026-10-30)
 
 - Public scans (`scan.yml`) ride out transient failures instead of failing the job: a
   failed fetch is retried twice, and each Rekor signing step is tried once more a minute
@@ -10,6 +10,8 @@
   gets a GitHub 500 after its retries: that batch's targets keep their previous state, so
   the next run dispatches them, and the rest of the run and its state go through. It
   fails only if no batch could be dispatched.
+- Trust policy: v0.1.10 pinned (certify.yml tag object `8ce93989d40e…`; scan.yml and
+  the GitLab witness at commit `b20bff30d84b…`); v0.1.11 is the newest, by exact tag.
 
 ## 0.1.10 (2026-10-29)
 
