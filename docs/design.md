@@ -37,8 +37,7 @@ independent witnesses gives the same tamper-evidence without tokens or consensus
  Certificate = in-toto attestation (DSSE) ──► Sigstore Rekor (public log)
                                   │                 │ signed, witnessed checkpoints
                                   ▼                 ▼
- Ledger repo (index of certs + checkpoints) mirrored to GitHub · GitLab · Codeberg
-                                  │                 (Codeberg = mirror only, no signing)
+ Ledger repo (index of certs + checkpoints) on GitHub, mirrored to GitLab
                                   │                 └─ archived by Software Heritage
                                   ▼
  Daily OpenTimestamps anchor of the latest checkpoint (Bitcoin)
@@ -177,7 +176,7 @@ Assurance levels, published in the trust policy:
 | **Silver** | 1 forge, all four checks pass, logged in Rekor |
 | **Banded** | Not deterministically testable — A–E band with evidence, logged |
 
-## 5. Public mirrors — GitHub, GitLab, Codeberg
+## 5. Public mirrors — GitHub, GitLab
 
 The **ledger repo** (`workrr-trust/ledger`) is the human-browsable record.
 
@@ -186,12 +185,9 @@ The **ledger repo** (`workrr-trust/ledger`) is the human-browsable record.
   **Index only. No artifact copies.**
 - Written only by the certifier CI. Every commit signed. Protected branches,
   force-push disabled.
-- Mirrored to **GitHub, GitLab, and Codeberg** (Codeberg is non-profit, which reduces
-  dependence on corporate forges). Any divergence between mirrors is itself evidence
-  of tampering. **Codeberg is mirror-only.** Forgejo Actions can mint OIDC tokens, but
-  public Fulcio doesn't trust Codeberg's issuer yet (open request, no merged change).
-  Codeberg can't be a signing forge for Gold until that lands.
-- **Software Heritage** crawls GitHub, GitLab.com, and Codeberg on its own: a
+- Mirrored from **GitHub to GitLab**, which refuses rewritten history. Any divergence
+  between the two is itself evidence of tampering.
+- **Software Heritage** crawls GitHub and GitLab.com on its own: a
   permanent, independent, non-profit copy at zero cost to us. Crawl frequency is not
   guaranteed, so the ledger CI also calls the Save Code Now API after each update
   (rate-limited; one call per mirror per day is enough).
@@ -297,12 +293,9 @@ Rekor, any mirror, or Software Heritage.
 - **Fulcio issuers.** GitHub Actions and **gitlab.com** are trusted. Self-managed
   GitLab works only for specifically allow-listed instances (e.g.
   `gitlab.archlinux.org`), so customers on their own GitLab need a private Fulcio or
-  a key. **Codeberg/Forgejo is not trusted** (request open), so Codeberg is
-  mirror-only. Sources:
+  a key. Sources:
   [Fulcio issuer config](https://github.com/sigstore/fulcio/blob/main/config/identity/config.yaml),
-  [OIDC in Fulcio](https://docs.sigstore.dev/certificate_authority/oidc-in-fulcio/),
-  [fulcio#2442](https://github.com/sigstore/fulcio/issues/2442),
-  [Forgejo Actions OIDC](https://forgejo.org/docs/latest/user/actions/reference/).
+  [OIDC in Fulcio](https://docs.sigstore.dev/certificate_authority/oidc-in-fulcio/).
 - **Custom predicates.** `actions/attest` takes `predicate-type` plus
   `predicate`/`predicate-path` (≤16 MB). For public repos it signs with public-good
   Sigstore and writes to the public log, so cosign isn't needed on GitHub. GitLab has
@@ -318,9 +311,9 @@ Rekor, any mirror, or Software Heritage.
   config), so a shared certifier can't be the signing identity there (§2). Sources:
   [Fulcio OID info](https://github.com/sigstore/fulcio/blob/main/docs/oid-info.md),
   [GitHub OIDC with reusable workflows](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/using-openid-connect-with-reusable-workflows).
-- **Software Heritage.** Yes for all three. GitHub, GitLab, and Gitea/Forgejo listers
-  exist, and the SWH API shows recent full visits to sample repos on github.com,
-  gitlab.com, and codeberg.org (checked 2026-10-19). Frequency isn't guaranteed, so we
+- **Software Heritage.** Yes for both. GitHub and GitLab listers exist, and the SWH API
+  shows recent full visits to sample repos on github.com and gitlab.com (checked
+  2026-10-19). Frequency isn't guaranteed, so we
   also trigger Save Code Now. Sources:
   [SWH listers](https://docs.softwareheritage.org/devel/swh-lister/index.html),
   [SWH FAQ](https://docs.softwareheritage.org/user/faq/).

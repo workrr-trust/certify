@@ -95,4 +95,3 @@ witness run on every push.
   month, and a run takes a few.
 - A publisher's own GitLab CI can't be a signer: GitLab can't sign from an included
   CI file, and the cert identity would be the publisher's project.
-- Codeberg can't be a forge for Reproduced until public Fulcio trusts its OIDC issuer.
