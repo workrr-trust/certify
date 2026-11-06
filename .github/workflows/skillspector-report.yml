@@ -1,0 +1,91 @@
+# Runs NVIDIA's SkillSpector on one public skill and keeps a repeatable report
+# (docs/skillspector-report.md). Trial only: nothing here signs, and the result
+# changes no certificate, level or finding.
+#
+# This workflow must never gain signing power. SkillSpector brings a large Python
+# dependency tree, which stays out of any job that can mint a certifier identity.
+name: skillspector-report
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "owner/repo of the public skill"
+        required: true
+        type: string
+      commit:
+        description: "Full commit sha to scan"
+        required: true
+        type: string
+      path:
+        description: "Path of the skill in that commit"
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - .github/workflows/skillspector-report.yml
+      - scripts/skillspector-report.mjs
+
+permissions:
+  contents: read
+
+env:
+  SKILLSPECTOR_COMMIT: 54824463814a0be01360792523ec7245a69190fc # v2.13.4
+  UV_VERSION: 0.13.7
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .workrr-certifier
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: NVIDIA/SkillSpector
+          ref: ${{ env.SKILLSPECTOR_COMMIT }}
+          path: .skillspector
+          persist-credentials: false
+      - name: Install SkillSpector from its lockfile
+        working-directory: .skillspector
+        run: |
+          python3 -m venv "$RUNNER_TEMP/uv"
+          "$RUNNER_TEMP/uv/bin/pip" install --quiet "uv==$UV_VERSION"
+          "$RUNNER_TEMP/uv/bin/uv" sync --frozen --no-dev
+      - name: Check out the skill (no credentials)
+        env:
+          REPOSITORY: ${{ inputs.repository || 'workrr-trust/sample-skills' }}
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          git init --quiet subject
+          git -C subject -c credential.helper= fetch --quiet --depth 1 "https://github.com/$REPOSITORY" "${COMMIT:-HEAD}"
+          git -C subject -c advice.detachedHead=false checkout --quiet FETCH_HEAD
+      # The dead proxy keeps the scan offline, so a live lookup can't change the result.
+      - name: Scan twice, static only and offline
+        env:
+          ARTIFACT_PATH: ${{ inputs.path || 'skills/csv-summary' }}
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          ALL_PROXY: http://127.0.0.1:9
+          SKILLSPECTOR_OSV_TIMEOUT: "2"
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          for run in 1 2; do
+            status=0
+            .skillspector/.venv/bin/skillspector scan "subject/$ARTIFACT_PATH" --no-llm --format json --output "raw-$run.json" || status=$?
+            # 1 means SkillSpector scored the skill as risky; anything else is an error.
+            [ "$status" -le 1 ]
+            node .workrr-certifier/scripts/skillspector-report.mjs "raw-$run.json" "report-$run.json" "$SKILLSPECTOR_COMMIT"
+          done
+          cmp report-1.json report-2.json
+          cp report-1.json out/skillspector-report.json
+          jq -c '{tool: .tool.version, coverage, counts}' out/skillspector-report.json >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: skillspector-report
+          path: out/
+          retention-days: 14
