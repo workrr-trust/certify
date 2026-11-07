@@ -36,9 +36,13 @@ type Rule struct {
 	Description string   `json:"description"`
 	Pattern     string   `json:"pattern"`
 	Flags       string   `json:"flags"`
+	// Also holds patterns that must each match somewhere in the same file.
+	Also []string `json:"also,omitempty"`
+	// Origin says where a rule came from, when it isn't workrr's own.
+	Origin string `json:"origin,omitempty"`
 }
 
-const RulesetVersion = "workrr-scan-v0.2"
+const RulesetVersion = "workrr-scan-v0.3"
 
 var Rules = []Rule{
 	{ID: "WT001", Severity: "high", Description: "Instruction override phrasing",
@@ -61,6 +65,44 @@ var Rules = []Rule{
 		Pattern: "\\b(post|send|upload|exfiltrate|forward)\\b[^\\n]{0,60}https?://", Flags: "gi"},
 	{ID: "WT010", Severity: "warn", Description: "Large encoded blob",
 		Pattern: "[A-Za-z0-9+/]{240,}={0,2}", Flags: "g"},
+	{ID: "WT011", Severity: "high", Description: "Collects all environment variables and sends data out",
+		Pattern: "os\\.environ\\.items\\(\\)|json\\.dumps\\(dict\\(os\\.environ\\)|JSON\\.stringify\\(process\\.env\\)", Flags: "g",
+		Also: []string{"\\b(requests|httpx)\\.(post|put)\\(|\\baxios\\.post\\("},
+		Origin: "SkillSpector E1 and E2 (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07"},
+	{ID: "WT012", Severity: "high", Description: "Instructs adding a poison, or self-harm",
+		Pattern: "\\b(add\\s+(a\\s+)?(dash|pinch|bit|drop|amount)\\s+of\\s+|(include|incorporate|mix\\s+in|stir\\s+in)\\s+(some\\s+)?)(cyanide|arsenic|ricin|botulinum|strychnine|thallium|polonium|sarin|vx gas|mustard gas|anthrax|deadly nightshade|aconite|hemlock|oleander)\\b|\\b(you\\s+should|try\\s+to|please)\\s+(hurt|harm|injure)\\s+yourself\\b", Flags: "gi",
+		Origin: "SkillSpector P5 (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07"},
+	{ID: "WT013", Severity: "high", Description: "Sends or saves the system prompt through a tool",
+		Pattern: "\\b(write|save|store|log|dump|send|post|upload|transmit|copy|pipe|forward)\\s+(your\\s+(system\\s+)?(prompt|instructions)|(the\\s+)?system\\s+prompt)\\s+(to|into|via|through)\\s+(https?://|external|remote|webhook|server|curl|wget)", Flags: "gi",
+		Origin: "SkillSpector P8 (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07"},
+	{ID: "WT014", Severity: "high", Description: "Mining protocol or known mining pool",
+		Pattern: "stratum\\+(tcp|ssl)://|\\bmining\\.(subscribe|authorize|submit)\\b|\\b(pool\\.minexmr\\.com|xmrpool\\.eu|monerohash\\.com|supportxmr\\.com|nanopool\\.org|hashvault\\.pro|herominers\\.com|unmineable\\.com|minergate\\.com)\\b", Flags: "gi",
+		Origin: "SkillSpector YARA crypto_stratum_protocol and crypto_mining_pools (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
+	{ID: "WT015", Severity: "high", Description: "Mining software configured to run",
+		Pattern: "\\b(xmrig|xmr-stak|cpuminer|cgminer|bfgminer|ethminer|nbminer|phoenixminer)\\b", Flags: "gi",
+		Also: []string{"--donate-level|--pool\\b|\\bwallet\\b|\\bhashrate\\b"},
+		Origin: "SkillSpector YARA crypto_miner_software (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
+	{ID: "WT016", Severity: "critical", Description: "Browser cryptojacking script",
+		Pattern: "coinhive\\.min\\.js|CoinHive\\.Anonymous\\s*\\(|\\bcryptoloot\\b|webmine\\.pro|\\bjsecoin\\b|\\bcoin-imp\\b|minero\\.cc|\\bmonerominer\\b", Flags: "gi",
+		Origin: "SkillSpector YARA crypto_coinjacking (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
+	{ID: "WT017", Severity: "critical", Description: "PHP webshell: runs request input or decoded payloads",
+		Pattern: "\\b(eval|assert|system|passthru|shell_exec|popen|proc_open)\\s*\\(\\s*\\$_(POST|GET|REQUEST|COOKIE)\\s*\\[|\\beval\\s*\\(\\s*(base64_decode|gzinflate|str_rot13|gzuncompress)\\s*\\(", Flags: "gi",
+		Origin: "SkillSpector YARA php_webshell_generic and php_webshell_obfuscated (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
+	{ID: "WT018", Severity: "critical", Description: "Known webshell family",
+		Pattern: "\\b(c99shell|c99_sess_put|r57shell|b374k|p0wny|GodzillaShell)\\b|Web Shell by oRb", Flags: "gi",
+		Origin: "SkillSpector YARA php_webshell_known (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
+	{ID: "WT019", Severity: "high", Description: "Python, JSP or ASPX code runs request input",
+		Pattern: "[^.a-zA-Z0-9_](exec|eval)\\s*\\(\\s*request\\.|\\bos\\.(popen|system)\\s*\\(\\s*request\\.|\\bsubprocess\\.[a-zA-Z0-9_]+\\s*\\(\\s*request\\.|Runtime\\.getRuntime\\(\\)\\.exec\\s*\\(\\s*request\\.getParameter|ProcessBuilder\\s*\\([^\\n]*request\\.getParameter|Process\\.Start\\s*\\([^\\n]*Request\\[|cmd\\.exe[^\\n]*Request\\.", Flags: "gi",
+		Origin: "SkillSpector YARA python_webshell, jsp_webshell and aspx_webshell (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
+	{ID: "WT020", Severity: "critical", Description: "Reverse shell",
+		Pattern: "\\bbash\\s+-i\\s+>&\\s*/dev/tcp/|\\bncat?\\s[^\\n]*-e\\s*/bin/(ba)?sh\\b|\\bsocat\\s[^\\n]*EXEC[^\\n]*/bin/(ba)?sh|\\bmkfifo\\s[^\\n]*\\|\\s*/bin/(ba)?sh|\\bfsockopen\\s*\\([^\\n]*\\bexec\\s*\\(", Flags: "gi",
+		Origin: "SkillSpector YARA reverse_shell (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
+	{ID: "WT021", Severity: "high", Description: "Backdoor persistence",
+		Pattern: "\\buseradd\\s[^\\n]*-o\\s+-u\\s+0\\b|\\becho\\s[^\\n]*>>?\\s*[^\\n]*\\.ssh/authorized_keys|\\becho\\s[^\\n]*(curl|wget|base64|/dev/tcp)[^\\n]*>>\\s*[^\\n]*\\.(bashrc|profile)\\b", Flags: "gi",
+		Origin: "SkillSpector YARA backdoor_persistence (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
+	{ID: "WT022", Severity: "critical", Description: "Ransomware behavior",
+		Pattern: "os\\.walk\\s*\\([^\\n]*\\.(encrypt|cipher)\\b|os\\.rename\\s*\\([^\\n]*\\+\\s*['\"]\\.(locked|encrypted|crypt|enc)['\"]\\s*\\)", Flags: "gi",
+		Origin: "SkillSpector YARA ransomware_behavior (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
 }
 
 // RulesetDigest is jsonDigest({version, rules}).
@@ -111,10 +153,20 @@ var matchers = func() map[string]matcher {
 			continue
 		}
 		unicodeMode := strings.Contains(r.Flags, "u")
-		re := regexp.MustCompile(translateRegExp(r.Pattern, strings.Contains(r.Flags, "i"), unicodeMode))
+		fold := strings.Contains(r.Flags, "i")
+		re := regexp.MustCompile(translateRegExp(r.Pattern, fold, unicodeMode))
+		var also []*regexp.Regexp
+		for _, p := range r.Also {
+			also = append(also, regexp.MustCompile(translateRegExp(p, fold, unicodeMode)))
+		}
 		m[r.ID] = func(text string) (string, []int) {
 			if !unicodeMode {
 				text = CodeUnitString(text)
+			}
+			for _, a := range also {
+				if !a.MatchString(text) {
+					return text, nil
+				}
 			}
 			var starts []int
 			for _, loc := range re.FindAllStringIndex(text, -1) {
@@ -135,12 +187,20 @@ var (
 		`|` + asciiFold("untrusted") + `[` + JSWhitespaceClass + `]+` + asciiFold("data") + `)\b`)
 )
 
-// promptRules are about text an agent reads as instructions. Tests, fixtures and
-// snapshots are not loaded as instructions (and are where scanners and sanitizers
-// keep their samples), so these rules skip them. Shell, credential and character
-// rules do not.
+// promptRules are about text an agent reads as instructions, or match malware
+// samples. Tests, fixtures and snapshots are not loaded as instructions (and are
+// where scanners and sanitizers keep their samples), so these rules skip them.
+// Shell, credential and character rules do not.
 var (
-	promptRules = []string{"WT001", "WT007", "WT008"}
+	promptRules = func() []string {
+		ids := []string{"WT001", "WT007", "WT008"}
+		for _, r := range Rules {
+			if r.Origin != "" {
+				ids = append(ids, r.ID)
+			}
+		}
+		return ids
+	}()
 	TestPathRe  = regexp.MustCompile(`(^|/)(test|tests|__tests__|fixtures|__snapshots__)/|(^|/)test[_-][^/]*$|[._](test|spec)\.[A-Za-z0-9]+$|\.(snap|snapshot)$`)
 )
 
@@ -360,7 +420,7 @@ func translateRegExp(p string, fold, unicodeMode bool) string {
 				end := slices.Index(rs[i:], '}') + i
 				sb.WriteString(`\x` + string(rs[i+1:end+1]))
 				i = end
-			case strings.ContainsRune(`bn.$|\`, c):
+			case strings.ContainsRune(`bn.$|\()[]+`, c):
 				sb.WriteRune('\\')
 				sb.WriteRune(c)
 			default:

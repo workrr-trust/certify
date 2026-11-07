@@ -35,7 +35,7 @@ matches patterns, and some matches are innocent (a README that tells people to r
 
 A finding is made only for security-relevant failures:
 
-- a high or critical scan rule (WT001–WT003, WT005–WT008);
+- a high or critical scan rule (WT001–WT003, WT005–WT008, WT011–WT022);
 - a forbidden file type (compiled binaries);
 - a symlink that points outside the artifact.
 
@@ -54,10 +54,10 @@ concealment. Listings show concealment findings at once. A `check` finding gets 
 short fix window before a listing ranks it as Flagged.
 
 **Tests and fixtures.** The rules about text an agent reads as instructions
-(WT001, WT007, WT008) skip tests, fixtures and snapshots (`test/`, `tests/`,
+(WT001, WT007, WT008) and the malware-pattern rules (WT011–WT022) skip tests, fixtures and snapshots (`test/`, `tests/`,
 `__tests__/`, `fixtures/`, `__snapshots__/`, `test_*`, `test-*`, `*.test.*`,
 `*.spec.*`, `*.snap`, `*.snapshot`): scanners and prompt-injection defences keep
-their samples there. The shell, credential and character rules still apply.
+their samples there. The other shell, credential and character rules still apply.
 
 ## Format
 
