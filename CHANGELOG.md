@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.12 (2026-11-07)
 
 - **Ruleset `workrr-scan-v0.3`** (new ruleset digest): 12 rules, WT011–WT022, adapted from
   NVIDIA SkillSpector (Apache-2.0, commit `54824463`) on 2026-11-07, several based on
@@ -9,6 +9,9 @@
   cryptomining, webshells, reverse shells, backdoor persistence and ransomware. Each rule
   records its origin, which is part of the digest. They skip tests and fixtures.
 - Rules can now require `also` patterns: other patterns that must match in the same file.
+- Trial workflow `skillspector-report.yml`: an unsigned, repeatable SkillSpector report.
+- Trust policy: v0.1.11 pinned (certify.yml tag object `9f6e380f6f6f…`; scan.yml and
+  the GitLab witness at commit `02a9d67785f8…`); v0.1.12 is the newest, by exact tag.
 
 ## 0.1.11 (2026-10-30)
 

@@ -67,7 +67,7 @@ var Rules = []Rule{
 		Pattern: "[A-Za-z0-9+/]{240,}={0,2}", Flags: "g"},
 	{ID: "WT011", Severity: "high", Description: "Collects all environment variables and sends data out",
 		Pattern: "os\\.environ\\.items\\(\\)|json\\.dumps\\(dict\\(os\\.environ\\)|JSON\\.stringify\\(process\\.env\\)", Flags: "g",
-		Also: []string{"\\b(requests|httpx)\\.(post|put)\\(|\\baxios\\.post\\("},
+		Also:   []string{"\\b(requests|httpx)\\.(post|put)\\(|\\baxios\\.post\\("},
 		Origin: "SkillSpector E1 and E2 (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07"},
 	{ID: "WT012", Severity: "high", Description: "Instructs adding a poison, or self-harm",
 		Pattern: "\\b(add\\s+(a\\s+)?(dash|pinch|bit|drop|amount)\\s+of\\s+|(include|incorporate|mix\\s+in|stir\\s+in)\\s+(some\\s+)?)(cyanide|arsenic|ricin|botulinum|strychnine|thallium|polonium|sarin|vx gas|mustard gas|anthrax|deadly nightshade|aconite|hemlock|oleander)\\b|\\b(you\\s+should|try\\s+to|please)\\s+(hurt|harm|injure)\\s+yourself\\b", Flags: "gi",
@@ -80,7 +80,7 @@ var Rules = []Rule{
 		Origin: "SkillSpector YARA crypto_stratum_protocol and crypto_mining_pools (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
 	{ID: "WT015", Severity: "high", Description: "Mining software configured to run",
 		Pattern: "\\b(xmrig|xmr-stak|cpuminer|cgminer|bfgminer|ethminer|nbminer|phoenixminer)\\b", Flags: "gi",
-		Also: []string{"--donate-level|--pool\\b|\\bwallet\\b|\\bhashrate\\b"},
+		Also:   []string{"--donate-level|--pool\\b|\\bwallet\\b|\\bhashrate\\b"},
 		Origin: "SkillSpector YARA crypto_miner_software (NVIDIA, Apache-2.0), commit 54824463, adapted 2026-11-07; based on Neo23x0/signature-base (Detection Rule License 1.1)"},
 	{ID: "WT016", Severity: "critical", Description: "Browser cryptojacking script",
 		Pattern: "coinhive\\.min\\.js|CoinHive\\.Anonymous\\s*\\(|\\bcryptoloot\\b|webmine\\.pro|\\bjsecoin\\b|\\bcoin-imp\\b|minero\\.cc|\\bmonerominer\\b", Flags: "gi",
@@ -201,7 +201,7 @@ var (
 		}
 		return ids
 	}()
-	TestPathRe  = regexp.MustCompile(`(^|/)(test|tests|__tests__|fixtures|__snapshots__)/|(^|/)test[_-][^/]*$|[._](test|spec)\.[A-Za-z0-9]+$|\.(snap|snapshot)$`)
+	TestPathRe = regexp.MustCompile(`(^|/)(test|tests|__tests__|fixtures|__snapshots__)/|(^|/)test[_-][^/]*$|[._](test|spec)\.[A-Za-z0-9]+$|\.(snap|snapshot)$`)
 )
 
 // prev is the code unit just before the match (-1 at the start of a line).
