@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Evidence packs: `sbom.cdx.json` carries the data fields of BSI TR-03183-2 v2.1.0
+  (`docs/evidence.md`): SHA-512 and `bsi:component:filename`, `executable`, `archive`
+  and `structured` for every file; component creator, declared version and SPDX
+  licence; a full dependency graph with stated completeness; identified dependencies
+  with minimum versions. `--sbom-creator <email|url>` names who built the SBOM. Fields
+  the pack can't fill are listed in `evidence.json` (`sbom.gaps`). The SBOM validates
+  against the CycloneDX 1.6 schema.
+
 ## 0.1.12 (2026-11-07)
 
 - **Ruleset `workrr-scan-v0.3`** (new ruleset digest): 12 rules, WT011–WT022, adapted from
