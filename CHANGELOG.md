@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.13 (2026-11-09)
 
 - Evidence packs: `sbom.cdx.json` carries the data fields of BSI TR-03183-2 v2.1.0
   (`docs/evidence.md`): SHA-512 and `bsi:component:filename`, `executable`, `archive`
@@ -9,6 +9,12 @@
   with minimum versions. `--sbom-creator <email|url>` names who built the SBOM. Fields
   the pack can't fill are listed in `evidence.json` (`sbom.gaps`). The SBOM validates
   against the CycloneDX 1.6 schema.
+
+- Trust policy: pin v0.1.12: `certify.yml` to its tag object
+  `7546778ce60d6898eccc611cdc4adc084525d029`; `scan.yml` and the GitLab witness to the tagged
+  commit `9a69a8221d3f5e94917250a33120fc5d646fdbbc`. Accept this release by exact tag until
+  v0.1.14 pins it.
+- `watch.yml` dispatches `scan.yml` at v0.1.13.
 
 ## 0.1.12 (2026-11-07)
 
