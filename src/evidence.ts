@@ -1,8 +1,9 @@
 // Evidence packs (docs/evidence.md): a verified certificate rearranged for one regulation's records.
 // A pack adds no claim and no signature: every fact comes from the certificate, the artifact's bytes,
 // or the publisher's own declarations, and says which.
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import type { Artifact } from "./artifact.js";
 import type { Predicate } from "./certify.js";
 import { sha256Hex } from "./digest.js";
@@ -20,6 +21,14 @@ export type PublisherDeclarations = { supportUntil?: Declaration; securityPolicy
 export type Dependency = { ecosystem: "npm" | "pypi" | "golang"; name: string; version?: string; range?: string; purl: string; manifest: string };
 export type Dependencies = { dependencies: Dependency[]; unparsed: string[] };
 
+/** Facts about the component's own bytes that the SBOM needs beyond the certificate (BSI TR-03183-2). */
+export type FileFacts = { sha512?: string; executable: boolean; archive: boolean };
+export type ComponentFacts = {
+  version?: { value: string; from: string };
+  license?: { expression: string; from: string };
+  files: Record<string, FileFacts>;
+};
+
 export type PackBundle = { file: string; bytes: Buffer; result: BundleResult };
 
 export type EvidenceInput = {
@@ -28,6 +37,9 @@ export type EvidenceInput = {
   bundles: PackBundle[];
   publisher: PublisherDeclarations;
   dependencies: Dependencies;
+  facts: ComponentFacts;
+  /** Who builds the pack, as an email or URL: the SBOM's creator (BSI TR-03183-2 §5.2.1). */
+  sbomCreator?: string;
   revocationChecked: boolean;
   builtAt: string;
 };
@@ -180,6 +192,100 @@ export async function collectDependencies(artifact: Artifact): Promise<Dependenc
   return { dependencies, unparsed };
 }
 
+export const SBOM_GUIDELINE = "BSI TR-03183-2 v2.1.0";
+
+const EXECUTABLE_EXT = new Set([
+  ".js", ".cjs", ".mjs", ".ts", ".cts", ".mts", ".jsx", ".tsx", ".py", ".pyw", ".sh", ".bash", ".zsh", ".fish", ".ps1", ".psm1",
+  ".bat", ".cmd", ".rb", ".pl", ".php", ".lua", ".r", ".jl", ".groovy", ".kts", ".swift", ".exe", ".dll", ".so", ".dylib", ".wasm",
+  ".jar", ".class", ".pyc", ".bin", ".appimage",
+]);
+const ARCHIVE_EXT = [".zip", ".tar", ".tgz", ".tar.gz", ".tar.bz2", ".tar.xz", ".gz", ".bz2", ".xz", ".7z", ".rar", ".jar", ".whl", ".egg", ".nupkg", ".deb", ".rpm", ".apk", ".dmg", ".iso"];
+
+/** An SPDX licence identifier or expression, by shape (the identifiers themselves aren't checked against the list). */
+function spdxExpression(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const e = v.trim();
+  const id = String.raw`(?:LicenseRef-[A-Za-z0-9.-]+|[A-Za-z0-9][A-Za-z0-9.-]*\+?)`;
+  const shape = new RegExp(String.raw`^\(*${id}(?:\s+WITH\s+${id})?\)*(?:\s+(?:AND|OR)\s+\(*${id}(?:\s+WITH\s+${id})?\)*)*$`);
+  return e && e.length <= 200 && shape.test(e) && !/^(see|unknown|none|unlicensed|proprietary)$/i.test(e) ? e : undefined;
+}
+
+/** Declared version, declared licence and per-file facts (SHA-512, executable, archive) from the artifact's bytes. */
+export async function collectFacts(artifact: Artifact): Promise<ComponentFacts> {
+  const facts: ComponentFacts = { files: {} };
+  const bytesOf = (p: string) => readFile(artifact.isDirectory ? join(artifact.root, p) : artifact.root);
+  for (const f of artifact.digest.files) {
+    const lower = f.path.toLowerCase();
+    const archive = ARCHIVE_EXT.some((x) => lower.endsWith(x));
+    if (artifact.digest.symlinkTargets?.has(f.path)) {
+      facts.files[f.path] = { executable: false, archive: false };
+      continue;
+    }
+    const bytes = await bytesOf(f.path);
+    const shebang = bytes.subarray(0, 2).toString("latin1") === "#!";
+    facts.files[f.path] = { sha512: createHash("sha512").update(bytes).digest("hex"), executable: shebang || EXECUTABLE_EXT.has(extname(lower)), archive };
+  }
+  if (!artifact.isDirectory) return facts;
+  const json = async (p: string) => {
+    if (!artifact.digest.files.some((f) => f.path === p)) return undefined;
+    try {
+      return JSON.parse((await bytesOf(p)).toString("utf8"));
+    } catch {
+      return undefined;
+    }
+  };
+  const fm = artifact.frontmatter as { version?: unknown; license?: unknown; metadata?: { version?: unknown } } | undefined;
+  const server = await json("server.json");
+  const pkg = await json("package.json");
+  const versions: [unknown, string][] = [[server?.version, "server.json"], [pkg?.version, "package.json"], [fm?.version, "SKILL.md"], [fm?.metadata?.version, "SKILL.md"]];
+  for (const [v, from] of versions) {
+    if ((typeof v === "string" && v.trim()) || typeof v === "number") {
+      facts.version = { value: String(v).trim(), from };
+      break;
+    }
+  }
+  const licenses: [unknown, string][] = [[fm?.license, "SKILL.md"], [pkg?.license, "package.json"], [server?.license, "server.json"]];
+  for (const [v, from] of licenses) {
+    const expression = spdxExpression(v);
+    if (expression) {
+      facts.license = { expression, from };
+      break;
+    }
+  }
+  return facts;
+}
+
+/** The lowest version a range allows, when it has one (BSI TR-03183-2 §3.2.1: minimum required version). */
+function minimumVersion(range: string | undefined): string | undefined {
+  const m = range && /^\s*(?:\^|~|>=|~=|==|=)?\s*v?(\d+(?:\.\d+){0,3}(?:[-+.][0-9A-Za-z.-]+)?)/.exec(range);
+  return m?.[1];
+}
+
+function projectPage(d: Dependency): string {
+  if (d.ecosystem === "npm") return `https://www.npmjs.com/package/${d.name}`;
+  if (d.ecosystem === "pypi") return `https://pypi.org/project/${d.name}/`;
+  return `https://pkg.go.dev/${d.name}`;
+}
+
+function rawFileUrl(source: Predicate["source"], relPath: string): string | undefined {
+  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(canonicalSource(source.uri));
+  if (!m) return undefined;
+  const path = [source.path, relPath].join("/").replace(/^\.?\/+/, "").replace(/\/\.\//g, "/");
+  return `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${source.commit}/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function githubPurl(source: Predicate["source"]): string | undefined {
+  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(canonicalSource(source.uri));
+  if (!m) return undefined;
+  const sub = source.path.replace(/^\.?\/+/, "").replace(/\/+$/, "");
+  return `pkg:github/${m[1].toLowerCase()}/${m[2].toLowerCase()}@${source.commit}${sub && sub !== "." ? `#${sub}` : ""}`;
+}
+
+function entity(contact: string): { url?: string[]; contact?: { email: string }[] } {
+  const email = /^(?:mailto:)?([^@\s/:]+@[^@\s/]+)$/.exec(contact)?.[1];
+  return email ? { contact: [{ email }] } : { url: [contact] };
+}
+
 // ── pack contents ────────────────────────────────────────────────────────────
 
 function bundleKind(r: BundleResult): "publisher" | "observer" | "witness" {
@@ -240,17 +346,81 @@ export function buildEvidence(input: EvidenceInput, profile: string) {
     publisher: input.publisher,
     dependencies: input.dependencies,
     componentIdentification: { name: p.artifact.name, version: p.source.commit, digest, supplier, sbom: "sbom.cdx.json" },
+    sbom: { file: "sbom.cdx.json", format: "CycloneDX 1.6", guideline: SBOM_GUIDELINE, gaps: sbomGaps(input) },
   };
 }
 
 export type Evidence = ReturnType<typeof buildEvidence>;
 
+/** Required BSI TR-03183-2 fields this SBOM could not fill, with the reason. */
+export function sbomGaps(input: EvidenceInput): string[] {
+  const gaps: string[] = [];
+  if (!input.sbomCreator) gaps.push("SBOM creator: pass --sbom-creator <email or URL> (who built this pack)");
+  if (!input.facts.license) gaps.push("component licences: the artifact declares no SPDX licence (SKILL.md license, package.json or server.json)");
+  const links = Object.entries(input.facts.files).filter(([, f]) => !f.sha512).map(([p]) => p);
+  if (links.length) gaps.push(`SHA-512 of ${links.join(", ")}: symbolic link, no file bytes`);
+  return gaps;
+}
+
 export function buildSbom(input: EvidenceInput, ev: Evidence) {
   const c = ev.component;
-  const extRefs: { type: string; url: string; comment?: string }[] = [{ type: "vcs", url: c.supplier }];
+  const facts = input.facts;
+  const deps = input.dependencies;
+  const tree = /^https:\/\/github\.com\//.test(c.supplier)
+    ? `${c.supplier}/tree/${c.source.commit}/${c.source.path.replace(/^\.?\/+/, "")}`.replace(/\/$/, "")
+    : c.supplier;
+  const extRefs: { type: string; url: string; comment?: string; hashes?: { alg: string; content: string }[] }[] = [
+    { type: "vcs", url: c.supplier },
+    { type: "source-distribution", url: tree },
+  ];
   for (const b of ev.certificate.bundles) for (const url of b.rekor) extRefs.push({ type: "attestation", url, comment: `workrr trust certificate (${b.kind})` });
   const security = input.publisher.securityContact ?? input.publisher.securityPolicy;
   if (security) extRefs.push({ type: "security-contact", url: security.value });
+  // CycloneDX takes one licence expression per component: the distribution licence (TR "concluded"). The
+  // publisher is the creator, so it is the licence they declared; the declaration's source is a property.
+  const licenses = facts.license ? [{ expression: facts.license.expression, acknowledgement: "concluded" }] : undefined;
+  const licenseProps = facts.license
+    ? [{ name: "workrr:declared-license", value: facts.license.expression }, { name: "workrr:declared-license-from", value: facts.license.from }]
+    : [];
+  const purl = githubPurl(c.source);
+  const flags = (executable: boolean, archive: boolean) => [
+    { name: "bsi:component:executable", value: executable ? "executable" : "non-executable" },
+    { name: "bsi:component:archive", value: archive ? "archive" : "no archive" },
+    { name: "bsi:component:structured", value: archive ? "structured" : "unstructured" },
+  ];
+  const files = input.artifact.digest.files.map((f) => {
+    const ff = facts.files[f.path] ?? { executable: false, archive: false };
+    const deployable = rawFileUrl(c.source, f.path) ?? c.supplier;
+    return {
+      "bom-ref": `file:${f.path}`,
+      type: "file",
+      name: f.path,
+      version: c.version,
+      manufacturer: { name: c.supplier, url: [c.supplier] },
+      hashes: [{ alg: "SHA-256", content: f.sha256 }, ...(ff.sha512 ? [{ alg: "SHA-512", content: ff.sha512 }] : [])],
+      ...(licenses ? { licenses } : {}),
+      externalReferences: [{ type: "distribution", url: deployable, ...(ff.sha512 ? { hashes: [{ alg: "SHA-512", content: ff.sha512 }] } : {}) }],
+      properties: [{ name: "bsi:component:filename", value: basename(f.path) }, ...flags(ff.executable, ff.archive)],
+    };
+  });
+  const libRef = (d: Dependency) => `${d.purl}#${d.manifest}`;
+  const libraries = deps.dependencies.map((d) => {
+    const version = d.version ?? minimumVersion(d.range);
+    return {
+      "bom-ref": libRef(d),
+      type: "library",
+      name: d.name,
+      ...(version ? { version } : {}),
+      manufacturer: { url: [projectPage(d)] },
+      purl: d.purl,
+      scope: "required",
+      properties: [
+        { name: "workrr:manifest", value: d.manifest },
+        ...(d.range ? [{ name: "workrr:version-range", value: d.range }] : []),
+        ...(!d.version && version ? [{ name: "workrr:version-meaning", value: "minimum required version from the declared range" }] : []),
+      ],
+    };
+  });
   return {
     bomFormat: "CycloneDX",
     specVersion: "1.6",
@@ -259,40 +429,46 @@ export function buildSbom(input: EvidenceInput, ev: Evidence) {
     metadata: {
       timestamp: ev.certificate.certifiedAt,
       tools: { components: [{ type: "application", name: "workrr", version: VERSION }] },
+      ...(input.sbomCreator ? { manufacturer: entity(input.sbomCreator) } : {}),
       component: {
         "bom-ref": "component",
         type: "application",
         name: c.name,
-        version: c.version,
+        version: facts.version?.value ?? c.version,
+        manufacturer: { name: c.supplier, url: [c.supplier] },
         supplier: { name: c.supplier, url: [c.supplier] },
         hashes: [{ alg: "SHA-256", content: c.digest.slice("sha256:".length) }],
+        ...(licenses ? { licenses } : {}),
+        ...(purl ? { purl } : {}),
         externalReferences: extRefs,
+        components: files,
         properties: [
           { name: "workrr:artifact-type", value: c.type },
           { name: "workrr:digest-algorithm", value: c.digestAlgorithm },
+          { name: "workrr:source-commit", value: c.source.commit },
           { name: "workrr:source-path", value: c.source.path },
+          ...(facts.version ? [{ name: "workrr:version-from", value: facts.version.from }] : []),
+          ...licenseProps,
           ...(input.publisher.supportUntil ? [{ name: "workrr:support-until", value: input.publisher.supportUntil.value }] : []),
+          { name: "workrr:sbom-guideline", value: SBOM_GUIDELINE },
         ],
       },
     },
-    components: [
-      ...input.artifact.digest.files.map((f) => ({
-        "bom-ref": `file:${f.path}`,
-        type: "file",
-        name: f.path,
-        hashes: [{ alg: "SHA-256", content: f.sha256 }],
-      })),
-      ...input.dependencies.dependencies.map((d) => ({
-        "bom-ref": `${d.purl}#${d.manifest}`,
-        type: "library",
-        name: d.name,
-        ...(d.version ? { version: d.version } : {}),
-        purl: d.purl,
-        scope: "required",
-        properties: [{ name: "workrr:manifest", value: d.manifest }, ...(d.range ? [{ name: "workrr:version-range", value: d.range }] : [])],
-      })),
+    components: libraries,
+    dependencies: [
+      { ref: "component", dependsOn: libraries.map((l) => l["bom-ref"]) },
+      ...files.map((f) => ({ ref: f["bom-ref"], dependsOn: [] as string[] })),
+      ...libraries.map((l) => ({ ref: l["bom-ref"], dependsOn: [] as string[] })),
     ],
-    dependencies: [{ ref: "component", dependsOn: input.dependencies.dependencies.map((d) => `${d.purl}#${d.manifest}`) }],
+    compositions: [
+      // Every file is listed: the certificate digest covers exactly these.
+      { "bom-ref": "composition:files", aggregate: "complete", assemblies: ["component"] },
+      // Direct dependencies as declared in the manifests that were parsed; runtimes and undeclared tools aren't listed.
+      { "bom-ref": "composition:direct", aggregate: deps.unparsed.length ? "incomplete" : "unknown", dependencies: ["component"] },
+      ...(files.length + libraries.length
+        ? [{ "bom-ref": "composition:nested", aggregate: "unknown", dependencies: [...files.map((f) => f["bom-ref"]), ...libraries.map((l) => l["bom-ref"])] }]
+        : []),
+    ],
   };
 }
 
@@ -319,7 +495,7 @@ export function craClauses(input: EvidenceInput, ev: Evidence): Clause[] {
       id: "annex-i-1-2-f",
       title: "Annex I Part I(2)(f): integrity of programs and configuration",
       status: "partial",
-      evidence: ["evidence.json#/component/digest", "sbom.cdx.json#/components"],
+      evidence: ["evidence.json#/component/digest", "sbom.cdx.json#/metadata/component/components"],
       note: "The digest and per-file hashes let you check that the component you ship is byte-for-byte the one certified.",
       remains: "Integrity protection of the product as a whole, including how it installs and updates this component.",
     },
@@ -328,7 +504,7 @@ export function craClauses(input: EvidenceInput, ev: Evidence): Clause[] {
       title: "Annex I Part II(1): software bill of materials",
       status: "partial",
       evidence: ["sbom.cdx.json"],
-      note: `Component SBOM: ${input.artifact.digest.files.length} file(s), ${input.dependencies.dependencies.length} declared top-level dependenc${input.dependencies.dependencies.length === 1 ? "y" : "ies"}.${input.dependencies.unparsed.length ? ` Not parsed: ${input.dependencies.unparsed.join(", ")}.` : ""}`,
+      note: `Component SBOM with the data fields of ${SBOM_GUIDELINE}: ${input.artifact.digest.files.length} file(s), ${input.dependencies.dependencies.length} declared top-level dependenc${input.dependencies.dependencies.length === 1 ? "y" : "ies"}.${input.dependencies.unparsed.length ? ` Not parsed: ${input.dependencies.unparsed.join(", ")}.` : ""} ${ev.sbom.gaps.length ? `Required fields not filled: ${ev.sbom.gaps.join("; ")}.` : "Every required field is filled."}`,
       remains: "Include this component in your product's SBOM.",
     },
     {

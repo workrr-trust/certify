@@ -10,7 +10,8 @@ a directory the user files with their technical documentation or hands to an
 auditor, with each piece of evidence mapped to the clause it supports.
 
 ```bash
-workrr evidence ./my-skill --bundle certificate.sigstore.json --profile cra --out evidence/
+workrr evidence ./my-skill --bundle certificate.sigstore.json --profile cra --out evidence/ \
+  --sbom-creator security@example.com
 ```
 
 ## Principles
@@ -40,7 +41,7 @@ workrr evidence ./my-skill --bundle certificate.sigstore.json --profile cra --ou
 | `summary.html` | One printable page for a human reviewer: the certificate statement, the component, the checks, the clause table, what is not covered, how to verify | No (shows the build time) |
 | `evidence.json` | Machine-readable facts: component identification, certificate, checks, publisher declarations | Yes |
 | `mapping.<profile>.json` | Clause → status → evidence fields → what remains the user's job | Yes |
-| `sbom.cdx.json` | CycloneDX 1.6 SBOM of the certified component: its files with SHA-256 hashes, and the top-level dependencies it declares | Yes |
+| `sbom.cdx.json` | CycloneDX 1.6 SBOM of the certified component with the data fields of BSI TR-03183-2 v2.1.0: its files with SHA-256 and SHA-512 hashes, and the top-level dependencies it declares | Yes |
 | `certificate/*.sigstore.json` | The original bundle(s), unchanged | Yes |
 | `verify.sh` | Re-verifies the bundle(s) against an artifact checkout with the pinned CLI version | Yes |
 | `verification.json` | When the pack was built, the CLI version, and the verifier's notes (for example, whether revocation was checked) | No |
@@ -80,17 +81,39 @@ The certifier does not check these declarations. A pack reports them as
 
 ### SBOM
 
-`sbom.cdx.json` describes the certified component exactly as signed:
+`sbom.cdx.json` is a CycloneDX 1.6 SBOM of the certified component exactly as signed,
+with the data fields of [BSI TR-03183-2](https://bsi.bund.de/dok/TR-03183-en) v2.1.0
+mapped as the TR's section 8.2 and the
+[BSI CycloneDX property taxonomy](https://github.com/BSI-Bund/tr-03183-cyclonedx-property-taxonomy)
+describe:
 
-- `metadata.component` is the artifact: name, the source commit as its version, the
-  certificate digest (algorithm in the `workrr:digest-algorithm` property), the
-  source repository, the Rekor entry, and the security contact if declared.
-- One `file` component per artifact file, with its SHA-256. Together they recompute
-  the certificate digest.
-- One `library` component per top-level dependency the artifact declares, with a
-  purl: `package.json` (versions from `package-lock.json` when present),
-  `requirements.txt` (pinned `==` versions), and `go.mod`. Other manifests are
-  listed in `evidence.json` as not parsed.
+| TR field | Where it comes from |
+|---|---|
+| SBOM creator (§5.2.1) | `--sbom-creator`: whoever builds the pack, as an email address or https URL. `metadata.manufacturer` |
+| Timestamp | The certificate's `certifiedAt`: the SBOM describes the certified state, and stays reproducible |
+| SBOM-URI | `serialNumber`, derived from the digest |
+| Component creator | The source repository URL (`manufacturer`) |
+| Component name | The certified name |
+| Component version | A declared version (`server.json`, `package.json`, SKILL.md `version` or `metadata.version`), else the source commit. Files carry the commit |
+| Filename, executable, archive, structured | `bsi:component:*` properties on each file. Executable: a `#!` line or a code extension. Archive: an archive extension; archives are structured, other files unstructured |
+| SHA-512 of the deployable component | Each file's SHA-512, under a `distribution` reference to the file at the certified commit |
+| Dependencies and their completeness | The dependency graph (every component has an entry) and `compositions`: the file list is `complete` (the digest covers exactly these files); direct dependencies are `unknown`, or `incomplete` when a manifest wasn't parsed |
+| Distribution licence | An SPDX expression the artifact declares (SKILL.md `license`, `package.json` or `server.json`), as `concluded`; the declaration is in `workrr:declared-license`. CycloneDX allows one expression per component |
+| Source code URI, other identifiers | `source-distribution` reference to the tree at the commit; `pkg:github` purl |
+
+The top-level component is the TR's *logical component* (a named set of files), so it
+has no filename, file hash or file properties of its own; its files do. Declared
+dependencies are outside the artifact (installed separately), so each is an
+*identified component*: name, purl, the project page as creator, and the exact
+version, or the minimum a range allows (`workrr:version-range` keeps the range).
+Dependencies come from `package.json` (versions from `package-lock.json`),
+`requirements.txt` and `go.mod`; other manifests are listed in `evidence.json` as not
+parsed.
+
+A required field the pack cannot fill is left out, not guessed, and listed in
+`evidence.json` (`sbom.gaps`) and the SBOM clause of the mapping: no `--sbom-creator`,
+no SPDX licence declared, or a symbolic link (no file bytes to hash). The SBOM holds no
+vulnerability data, as the TR asks.
 
 The SBOM is component-level. A manufacturer merges it into the product's own SBOM.
 

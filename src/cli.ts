@@ -10,7 +10,7 @@ import { levelName, parseLevel } from "./levels.js";
 import { BASELINE_POLICY, type Policy } from "./checks/policy.js";
 import { runTests, type TestsReport } from "./checks/tests.js";
 import { digestArtifact } from "./digest.js";
-import { buildPack, collectDependencies, collectPublisher, primaryBundle, PROFILES, type PackBundle, type Profile } from "./evidence.js";
+import { buildPack, collectDependencies, collectFacts, collectPublisher, primaryBundle, PROFILES, type PackBundle, type Profile } from "./evidence.js";
 import { runOrgPolicyGate, type GateLevel } from "./gate.js";
 import { loadTrustPolicy } from "./policy-loader.js";
 import { DEFAULT_TRUST_POLICY, type TrustPolicy } from "./trust-policy.js";
@@ -31,7 +31,7 @@ Usage:
                         [--trusted-root trusted_root.json] [--anchor-receipt receipt.json]
   workrr verify-finding <path> --bundle <file> [--trust-policy policy.json] [--json]
   workrr anchor  <path> --bundle <file> [--out anchor-request.json]
-  workrr evidence <path> --bundle <file> [--bundle <file>] --profile cra --out <dir>
+  workrr evidence <path> --bundle <file> [--bundle <file>] --profile cra --out <dir> [--sbom-creator <email|url>]
                         [--trust-policy policy.json] [--offline] [--trusted-root trusted_root.json]
   workrr gate    <repo-dir> [--min-level scanned|signed|tested|reproduced] [--policy policy.json]
                             [--certificates-dir <dir>] [--source <repo>] [--json]
@@ -74,7 +74,8 @@ Usage:
            certificate mapped to one regulation's records (docs/evidence.md).
            Profiles: cra (EU Cyber Resilience Act). Refuses when verification
            fails. The pack is evidence for the user's own assessment, never a
-           conformity assessment or declaration.
+           conformity assessment or declaration. The SBOM carries the data fields
+           of BSI TR-03183-2; --sbom-creator names who built it.
   gate     Org policy gate: discovers all skills in <repo-dir> and exits 1 if
            any skill is uncertified, fails policy/scan, or is below --min-level.
 `;
@@ -117,6 +118,7 @@ async function main(argv: string[]): Promise<number> {
       offline: { type: "boolean" },
       json: { type: "boolean" },
       profile: { type: "string" },
+      "sbom-creator": { type: "string" },
     },
   });
   const path = positionals[0];
@@ -318,6 +320,10 @@ async function main(argv: string[]): Promise<number> {
       const profile = values.profile as Profile | undefined;
       if (!profile || !PROFILES.includes(profile)) throw new Error(`--profile must be one of: ${PROFILES.join(", ")}`);
       if (!values.out) throw new Error("evidence needs --out <dir>");
+      const sbomCreator = values["sbom-creator"];
+      if (sbomCreator !== undefined && !/^(mailto:)?[^@\s/:]+@[^@\s/]+$|^https:\/\/\S+$/.test(sbomCreator)) {
+        throw new Error("--sbom-creator must be an email address or an https URL");
+      }
       const loaded = await loadTrustPolicy({ offline: values.offline, file: values["trust-policy"] });
       if (loaded.status !== "ok") throw new Error(`trust policy: ${loaded.warnings.join("; ") || loaded.status}`);
       const revocationChecked = !values.offline && loaded.revocationChecked;
@@ -349,6 +355,8 @@ async function main(argv: string[]): Promise<number> {
         bundles,
         publisher: await collectPublisher(artifact, predicate),
         dependencies: await collectDependencies(artifact),
+        facts: await collectFacts(artifact),
+        sbomCreator,
         revocationChecked,
         builtAt: new Date().toISOString(),
       }, profile);
